@@ -86,13 +86,18 @@ def test_config_validation():
     config.validate()  # Should not raise
     
     # Test invalid chunk size
-    config_invalid = RAGConfig(chunk_size=0)
+    config_invalid = RAGConfig(chunk_size=0, llm_provider="test")
     with pytest.raises(ValueError, match="chunk_size must be positive"):
         config_invalid.validate()
     
     # Test invalid overlap
-    config_invalid = RAGConfig(chunk_size=100, chunk_overlap=150)
+    config_invalid = RAGConfig(chunk_size=100, chunk_overlap=150, llm_provider="test")
     with pytest.raises(ValueError, match="chunk_overlap must be less than chunk_size"):
+        config_invalid.validate()
+    
+    # Test Gemini provider without API key
+    config_invalid = RAGConfig(llm_provider="gemini")
+    with pytest.raises(ValueError, match="gemini_api_key is required when using Gemini provider"):
         config_invalid.validate()
 
 

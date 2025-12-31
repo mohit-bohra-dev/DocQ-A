@@ -79,7 +79,7 @@ The system follows a layered architecture with the following components:
 - **Key Functions**:
   - `generate_answer(question: str, context: List[TextChunk]) -> AnswerResult`
   - `construct_grounded_prompt(question: str, context: List[TextChunk]) -> str`
-- **Provider Support**: Abstracted LLM interface (OpenAI, Gemini, etc.)
+- **Provider Support**: Abstracted LLM interface (Gemini, OpenAI, etc.)
 
 ## Data Models
 

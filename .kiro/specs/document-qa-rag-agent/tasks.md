@@ -22,7 +22,7 @@
 
 - [ ] 2. Implement embedding service and provider abstraction
   - Create embedding service interface with provider abstraction
-  - Implement concrete embedding providers (OpenAI, Sentence Transformers)
+  - Implement concrete embedding providers (Google Gemini, Sentence Transformers)
   - Add configuration management for embedding models
   - Implement batch embedding generation for efficiency
   - _Requirements: 1.3, 7.2_

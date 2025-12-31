@@ -86,4 +86,4 @@ This is the initial project structure. The following components will be implemen
 
 - Python 3.9+
 - uv package manager
-- OpenAI API key (for LLM provider)
+- Google Gemini API key (for LLM provider)

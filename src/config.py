@@ -29,7 +29,9 @@ class RAGConfig:
     embedding_dimension: int = 384
     
     # LLM settings
-    llm_provider: str = "openai"
+    llm_provider: str = "gemini"
+    gemini_api_key: Optional[str] = None
+    gemini_model: str = "gemini-1.5-flash"
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-3.5-turbo"
     
@@ -59,6 +61,8 @@ class RAGConfig:
         self.embedding_dimension = int(os.getenv("EMBEDDING_DIMENSION", self.embedding_dimension))
         
         self.llm_provider = os.getenv("LLM_PROVIDER", self.llm_provider)
+        self.gemini_api_key = os.getenv("GEMINI_API_KEY", self.gemini_api_key)
+        self.gemini_model = os.getenv("GEMINI_MODEL", self.gemini_model)
         self.openai_api_key = os.getenv("OPENAI_API_KEY", self.openai_api_key)
         self.openai_model = os.getenv("OPENAI_MODEL", self.openai_model)
         
@@ -89,6 +93,9 @@ class RAGConfig:
         
         if self.embedding_dimension <= 0:
             raise ValueError("embedding_dimension must be positive")
+        
+        if self.llm_provider == "gemini" and not self.gemini_api_key:
+            raise ValueError("gemini_api_key is required when using Gemini provider")
         
         if self.llm_provider == "openai" and not self.openai_api_key:
             raise ValueError("openai_api_key is required when using OpenAI provider")
