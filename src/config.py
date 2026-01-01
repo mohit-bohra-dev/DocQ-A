@@ -25,6 +25,7 @@ class RAGConfig:
     metadata_path: str = "data/metadata.json"
     
     # Embedding settings
+    embedding_provider: str = "sentence-transformers"  # "sentence-transformers" or "gemini"
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     embedding_dimension: int = 384
     
@@ -57,6 +58,7 @@ class RAGConfig:
         self.vector_store_path = os.getenv("VECTOR_STORE_PATH", self.vector_store_path)
         self.metadata_path = os.getenv("METADATA_PATH", self.metadata_path)
         
+        self.embedding_provider = os.getenv("EMBEDDING_PROVIDER", self.embedding_provider)
         self.embedding_model = os.getenv("EMBEDDING_MODEL", self.embedding_model)
         self.embedding_dimension = int(os.getenv("EMBEDDING_DIMENSION", self.embedding_dimension))
         
@@ -93,6 +95,9 @@ class RAGConfig:
         
         if self.embedding_dimension <= 0:
             raise ValueError("embedding_dimension must be positive")
+        
+        if self.embedding_provider == "gemini" and not self.gemini_api_key:
+            raise ValueError("gemini_api_key is required when using Gemini embedding provider")
         
         if self.llm_provider == "gemini" and not self.gemini_api_key:
             raise ValueError("gemini_api_key is required when using Gemini provider")

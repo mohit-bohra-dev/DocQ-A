@@ -2,7 +2,10 @@
 
 from abc import ABC, abstractmethod
 from typing import List, Optional
-from .models import TextChunk, SearchResult, ChunkMetadata, AnswerResult
+try:
+    from .models import TextChunk, SearchResult, ChunkMetadata, AnswerResult
+except ImportError:
+    from models import TextChunk, SearchResult, ChunkMetadata, AnswerResult
 
 
 class EmbeddingProvider(ABC):
