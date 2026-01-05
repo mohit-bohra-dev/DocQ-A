@@ -46,6 +46,7 @@
 
 
 
+
   - Create FAISS-based vector store class
   - Implement embedding storage and retrieval operations
   - Add metadata persistence using JSON files
@@ -61,8 +62,13 @@
   - **Property 7: Retrieval result ordering**
   - **Validates: Requirements 2.2**
 
-- [ ] 4. Implement PDF ingestion service
-  - Create PDF text extraction using PyPDF2 or similar library
+- [x] 4. Implement PDF ingestion service
+
+
+
+
+
+  - Create PDF text extraction using pypdf library
   - Implement configurable text chunking with overlap
   - Add document processing pipeline that coordinates extraction, chunking, and embedding
   - Integrate with vector store for persistence

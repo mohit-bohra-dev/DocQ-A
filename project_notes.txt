@@ -1,0 +1,177 @@
+Here’s the **cleanest “when should vs when shouldn’t” guide** you can keep in your head when working with **FAISS embeddings**.
+
+---
+
+## ✅ **WHEN you SHOULD normalize embeddings**
+
+### 1️⃣ When using **Cosine Similarity**
+
+**(Most common case)**
+
+* You care about **semantic direction**, not magnitude
+* Typical for **text embeddings**
+* Used in **RAG, semantic search, Q&A, chatbots**
+
+**Do this:**
+
+* L2-normalize embeddings
+* Use **Inner Product (IP)** index
+
+```python
+faiss.IndexFlatIP(d)
+```
+
+**Why:**
+
+* Cosine similarity = dot product of **unit vectors**
+* Normalization makes FAISS behave like cosine similarity
+
+**Use cases**
+
+* Document search
+* Chunk retrieval
+* FAQ bots
+* Knowledge base search
+
+---
+
+### 2️⃣ When your embedding model was trained for cosine similarity
+
+Most NLP embedding models assume cosine similarity:
+
+* SentenceTransformers
+* OpenAI / Gemini embeddings
+* Instructor / E5 / BGE models
+
+If docs say:
+
+> “Use cosine similarity”
+
+➡️ **Normalize**
+
+---
+
+### 3️⃣ When consistency across queries matters
+
+Normalization ensures:
+
+* Scores always fall between **-1 and 1**
+* No document wins just because its vector is “longer”
+
+---
+
+## ❌ **WHEN you SHOULD NOT normalize embeddings**
+
+### 1️⃣ When using **Euclidean (L2) distance**
+
+If your FAISS index is:
+
+```python
+faiss.IndexFlatL2(d)
+```
+
+**Do NOT normalize**
+
+**Why:**
+
+* L2 distance relies on true vector geometry
+* Normalization destroys magnitude information
+
+**Use cases**
+
+* Clustering
+* Anomaly detection
+* Vision embeddings
+* Scientific or spatial data
+
+---
+
+### 2️⃣ When magnitude carries meaning
+
+Some embeddings encode **importance or confidence** in vector length.
+
+**Examples**
+
+* Image embeddings
+* Audio embeddings
+* Sensor / time-series embeddings
+* Custom-trained models where vector norm matters
+
+➡️ Normalization = loss of signal
+
+---
+
+### 3️⃣ When model explicitly says “use L2 distance”
+
+If the model documentation says:
+
+> “Evaluate using Euclidean distance”
+
+➡️ **Do NOT normalize**
+
+---
+
+## ⚠️ **WHEN normalization is a bug (very common)**
+
+❌ Normalizing embeddings
+❌ Using `IndexFlatL2`
+
+This produces:
+
+* Incorrect nearest neighbors
+* Poor recall
+* Confusing distances
+
+---
+
+## 🧠 **Decision table (save this)**
+
+| Your Goal            | Normalize? | FAISS Index   |
+| -------------------- | ---------- | ------------- |
+| Cosine similarity    | ✅ Yes      | `IndexFlatIP` |
+| Dot product          | ❌ No       | `IndexFlatIP` |
+| Euclidean distance   | ❌ No       | `IndexFlatL2` |
+| Semantic text search | ✅ Yes      | `IndexFlatIP` |
+| Clustering / vision  | ❌ No       | `IndexFlatL2` |
+
+---
+
+## 🧪 **Practical rule (1-line)**
+
+> **If embeddings are for language → normalize.
+> If embeddings are for geometry → don’t.**
+
+
+
+Cosine similarity measures the angle between vectors (direction), ignoring magnitude, ideal for text/high-dims where length varies (e.g., document length). Euclidean distance measures the straight-line distance, considering both magnitude and direction, great for spatial data or when absolute closeness matters (e.g., user ratings, physical location). Cosine focuses on what is similar (direction), while Euclidean focuses on how far apart (magnitude + direction). [1, 2, 3, 4]  
+Cosine Similarity 
+
+• Measures: Angle between vectors (from -1 to 1, 1 being identical). 
+• Focuses on: Orientation/direction, not length. 
+• Best For: High-dimensional data, text analysis (TF-IDF, word embeddings) where document length/magnitude is irrelevant. 
+• Example: Two documents about "science" are similar, even if one is a book and the other a short article (different word counts/magnitudes). [1, 2, 4, 5]  
+
+Euclidean Distance 
+
+• Measures: Straight-line distance (0 to infinity, 0 being identical). 
+• Focuses on: Absolute distance, magnitude, and direction. 
+• Best For: Lower-dimensional data, spatial analysis, recommendation systems where absolute differences (e.g., quantity) matter. 
+• Example: User 1 buying 1 item vs. User 2 buying 100 of the same items – Euclidean sees them as far apart, Cosine sees them as very similar in preference. [1, 2, 3, 5, 6]  
+
+Key Difference & When to Use 
+
+• Choose Cosine when vector magnitude is noise (e.g., word counts in texts) and direction is key to meaning. 
+• Choose Euclidean when magnitude reflects important differences (e.g., user purchase volume) and you need "absolute closeness". 
+• Normalization: Applying normalization (making vector lengths 1) makes Euclidean distance behave more like cosine similarity, as it removes the magnitude effect. [2, 3, 4]  
+
+AI responses may include mistakes.
+
+[1] https://mehmetozkaya.medium.com/understanding-semantic-meaning-and-similarity-search-cosine-similarity-and-euclidean-distance-666fcb5911ea
+[2] https://medium.com/@sauravchoudhary369/unveiling-the-power-of-vector-databases-cosine-similarity-vs-euclidean-distance-1a7bb38e7e86
+[3] https://www.youtube.com/watch?v=yGsGQBGzy6Y
+[4] https://cmry.nl/notes/euclidean-v-cosine
+[5] https://milvus.io/ai-quick-reference/in-practical-terms-what-differences-might-you-observe-in-a-search-system-when-using-cosine-similarity-instead-of-euclidean-distance-on-the-same-set-of-normalized-embeddings
+[6] https://datascience.stackexchange.com/questions/27726/when-to-use-cosine-simlarity-over-euclidean-similarity
+
+
+
