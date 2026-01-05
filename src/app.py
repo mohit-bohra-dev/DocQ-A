@@ -11,6 +11,11 @@ import uuid
 from .config import config
 from .logging_config import configure_logging, get_logger
 from .models import QueryResult, SourceReference
+from .query_engine import QueryEngine
+from .answer_generator import AnswerGenerator
+from .embeddings import EmbeddingService
+from .vector_store import FAISSVectorStore
+from .ingestion import DocumentIngestionService
 
 # Configure logging
 configure_logging()
@@ -69,10 +74,59 @@ def get_ingestion_service():
     raise HTTPException(status_code=501, detail="Ingestion service not implemented yet")
 
 
-def get_query_engine():
-    """Get the query engine."""
-    # TODO: Implement in task 5
-    raise HTTPException(status_code=501, detail="Query engine not implemented yet")
+# Global service instances
+_embedding_service = None
+_vector_store = None
+_answer_generator = None
+_query_engine = None
+
+
+def get_embedding_service() -> EmbeddingService:
+    """Get the embedding service singleton."""
+    global _embedding_service
+    if _embedding_service is None:
+        _embedding_service = EmbeddingService(config)
+    return _embedding_service
+
+
+def get_vector_store() -> FAISSVectorStore:
+    """Get the vector store singleton."""
+    global _vector_store
+    if _vector_store is None:
+        embedding_service = get_embedding_service()
+        dimension = embedding_service.get_embedding_dimension()
+        _vector_store = FAISSVectorStore(
+            dimension=dimension,
+            index_path=config.vector_store_path,
+            metadata_path=config.metadata_path
+        )
+        # Load existing index if available
+        _vector_store.load_index()
+    return _vector_store
+
+
+def get_answer_generator() -> AnswerGenerator:
+    """Get the answer generator singleton."""
+    global _answer_generator
+    if _answer_generator is None:
+        _answer_generator = AnswerGenerator(config)
+    return _answer_generator
+
+
+def get_query_engine() -> QueryEngine:
+    """Get the query engine singleton."""
+    global _query_engine
+    if _query_engine is None:
+        vector_store = get_vector_store()
+        embedding_service = get_embedding_service()
+        answer_generator = get_answer_generator()
+        _query_engine = QueryEngine(
+            vector_store=vector_store,
+            embedding_service=embedding_service,
+            answer_generator=answer_generator,
+            config=config
+        )
+    return _query_engine
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -80,15 +134,36 @@ async def health_check() -> HealthResponse:
     """Health check endpoint."""
     logger.info("Health check requested")
     
-    return HealthResponse(
-        status="healthy",
-        version="0.1.0",
-        components={
-            "vector_store": "not_implemented",
-            "embedding_service": "not_implemented",
-            "llm_service": "not_implemented",
+    try:
+        # Check component status
+        embedding_service = get_embedding_service()
+        vector_store = get_vector_store()
+        answer_generator = get_answer_generator()
+        
+        embedding_info = embedding_service.get_provider_info()
+        provider_info = answer_generator.get_provider_info()
+        
+        components = {
+            "vector_store": "ready",
+            "embedding_service": f"ready ({embedding_info['provider_type']})",
+            "llm_service": f"ready ({provider_info['provider_type']})" if provider_info['is_available'] else "unavailable",
+            "documents_indexed": vector_store.get_document_count()
         }
-    )
+        
+        return HealthResponse(
+            status="healthy",
+            version="0.1.0",
+            components=components
+        )
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return HealthResponse(
+            status="unhealthy",
+            version="0.1.0",
+            components={
+                "error": str(e)
+            }
+        )
 
 
 @app.post("/upload", response_model=UploadResponse)
