@@ -1,8 +1,10 @@
 """FastAPI application for the Document QA RAG Agent."""
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, ValidationError
 from typing import List, Optional
 import os
 import tempfile
@@ -38,11 +40,60 @@ app.add_middleware(
 )
 
 
+# Custom exception handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle request validation errors."""
+    logger.warning("Request validation failed", extra={"errors": exc.errors()})
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "Request validation failed",
+            "error_code": "VALIDATION_ERROR",
+            "errors": exc.errors()
+        }
+    )
+
+
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError):
+    """Handle value errors."""
+    logger.error("Value error occurred", extra={"error": str(exc)})
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": str(exc),
+            "error_code": "VALUE_ERROR"
+        }
+    )
+
+
+@app.exception_handler(FileNotFoundError)
+async def file_not_found_handler(request: Request, exc: FileNotFoundError):
+    """Handle file not found errors."""
+    logger.error("File not found", extra={"error": str(exc)})
+    return JSONResponse(
+        status_code=404,
+        content={
+            "detail": "Requested file not found",
+            "error_code": "FILE_NOT_FOUND"
+        }
+    )
+
+
 # Request/Response models
 class QueryRequest(BaseModel):
     """Request model for querying documents."""
     question: str
     top_k: Optional[int] = None
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "question": "What is the main topic of the document?",
+                "top_k": 5
+            }
+        }
 
 
 class QueryResponse(BaseModel):
@@ -50,6 +101,21 @@ class QueryResponse(BaseModel):
     answer: str
     source_references: List[SourceReference]
     confidence_score: float
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "answer": "The main topic is...",
+                "source_references": [
+                    {
+                        "document_name": "example.pdf",
+                        "page_number": 1,
+                        "chunk_id": "abc123"
+                    }
+                ],
+                "confidence_score": 0.85
+            }
+        }
 
 
 class UploadResponse(BaseModel):
@@ -57,6 +123,15 @@ class UploadResponse(BaseModel):
     message: str
     document_id: str
     chunks_created: int
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "Document uploaded and processed successfully",
+                "document_id": "abc123-def456",
+                "chunks_created": 15
+            }
+        }
 
 
 class HealthResponse(BaseModel):
@@ -64,14 +139,52 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     components: dict
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "healthy",
+                "version": "0.1.0",
+                "components": {
+                    "vector_store": "ready",
+                    "embedding_service": "ready (sentence-transformers)",
+                    "llm_service": "ready (gemini)",
+                    "documents_indexed": 5
+                }
+            }
+        }
 
 
-# Dependency injection placeholders
-# These will be implemented in later tasks
-def get_ingestion_service():
-    """Get the document ingestion service."""
-    # TODO: Implement in task 4
-    raise HTTPException(status_code=501, detail="Ingestion service not implemented yet")
+class ErrorResponse(BaseModel):
+    """Standard error response model."""
+    detail: str
+    error_code: Optional[str] = None
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "detail": "Error description",
+                "error_code": "VALIDATION_ERROR"
+            }
+        }
+
+
+# Global service instances
+_ingestion_service = None
+
+
+def get_ingestion_service() -> DocumentIngestionService:
+    """Get the document ingestion service singleton."""
+    global _ingestion_service
+    if _ingestion_service is None:
+        embedding_service = get_embedding_service()
+        vector_store = get_vector_store()
+        _ingestion_service = DocumentIngestionService(
+            config=config,
+            embedding_service=embedding_service,
+            vector_store=vector_store
+        )
+    return _ingestion_service
 
 
 # Global service instances
@@ -129,29 +242,46 @@ def get_query_engine() -> QueryEngine:
     return _query_engine
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/health", 
+         response_model=HealthResponse,
+         summary="Health Check",
+         description="Check the health status of all system components")
 async def health_check() -> HealthResponse:
     """Health check endpoint."""
     logger.info("Health check requested")
     
     try:
         # Check component status
-        embedding_service = get_embedding_service()
-        vector_store = get_vector_store()
-        answer_generator = get_answer_generator()
+        components = {}
         
-        embedding_info = embedding_service.get_provider_info()
-        provider_info = answer_generator.get_provider_info()
+        try:
+            embedding_service = get_embedding_service()
+            embedding_info = embedding_service.get_provider_info()
+            components["embedding_service"] = f"ready ({embedding_info['provider_type']})"
+        except Exception as e:
+            components["embedding_service"] = f"error: {str(e)}"
         
-        components = {
-            "vector_store": "ready",
-            "embedding_service": f"ready ({embedding_info['provider_type']})",
-            "llm_service": f"ready ({provider_info['provider_type']})" if provider_info['is_available'] else "unavailable",
-            "documents_indexed": vector_store.get_document_count()
-        }
+        try:
+            vector_store = get_vector_store()
+            components["vector_store"] = "ready"
+            components["documents_indexed"] = vector_store.get_document_count()
+        except Exception as e:
+            components["vector_store"] = f"error: {str(e)}"
+            components["documents_indexed"] = 0
+        
+        try:
+            answer_generator = get_answer_generator()
+            provider_info = answer_generator.get_provider_info()
+            components["llm_service"] = f"ready ({provider_info['provider_type']})" if provider_info['is_available'] else "unavailable"
+        except Exception as e:
+            components["llm_service"] = f"error: {str(e)}"
+        
+        # Determine overall status
+        has_errors = any("error:" in str(status) for status in components.values())
+        overall_status = "unhealthy" if has_errors else "healthy"
         
         return HealthResponse(
-            status="healthy",
+            status=overall_status,
             version="0.1.0",
             components=components
         )
@@ -166,97 +296,187 @@ async def health_check() -> HealthResponse:
         )
 
 
-@app.post("/upload", response_model=UploadResponse)
+@app.post("/upload", 
+          response_model=UploadResponse,
+          status_code=201,
+          summary="Upload Document",
+          description="Upload and process a PDF document for querying",
+          responses={
+              201: {"description": "Document uploaded and processed successfully"},
+              400: {"description": "Invalid file or request", "model": ErrorResponse},
+              413: {"description": "File too large", "model": ErrorResponse},
+              422: {"description": "Document processing failed", "model": ErrorResponse},
+              500: {"description": "Internal server error", "model": ErrorResponse},
+              507: {"description": "Insufficient storage space", "model": ErrorResponse}
+          })
 async def upload_document(
-    file: UploadFile = File(...),
-    ingestion_service=Depends(get_ingestion_service)
+    file: UploadFile = File(..., description="PDF file to upload and process"),
+    ingestion_service: DocumentIngestionService = Depends(get_ingestion_service)
 ) -> UploadResponse:
     """Upload and process a PDF document."""
-    logger.info("Document upload requested", filename=file.filename)
+    logger.info("Document upload requested", extra={"filename": file.filename})
+    
+    # Validate file is provided
+    if not file.filename:
+        logger.warning("No filename provided")
+        raise HTTPException(status_code=400, detail="No file provided")
     
     # Validate file type
-    if not file.filename or not file.filename.lower().endswith('.pdf'):
-        logger.warning("Invalid file type uploaded", filename=file.filename)
+    if not file.filename.lower().endswith('.pdf'):
+        logger.warning("Invalid file type uploaded", extra={"filename": file.filename})
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
     
-    # Validate file size
-    if file.size and file.size > config.max_file_size_mb * 1024 * 1024:
-        logger.warning("File too large", filename=file.filename, size=file.size)
-        raise HTTPException(
-            status_code=413, 
-            detail=f"File size exceeds {config.max_file_size_mb}MB limit"
-        )
+    # Validate file size (if available)
+    if hasattr(file, 'size') and file.size is not None:
+        if file.size == 0:
+            logger.warning("Empty file uploaded", extra={"filename": file.filename})
+            raise HTTPException(status_code=400, detail="File is empty")
+        
+        if file.size > config.max_file_size_mb * 1024 * 1024:
+            logger.warning("File too large", extra={"filename": file.filename, "size": file.size})
+            raise HTTPException(
+                status_code=413, 
+                detail=f"File size exceeds {config.max_file_size_mb}MB limit"
+            )
     
+    temp_file_path = None
     try:
+        # Read file content
+        content = await file.read()
+        
+        # Validate content is not empty
+        if not content:
+            logger.warning("Empty file content", extra={"filename": file.filename})
+            raise HTTPException(status_code=400, detail="File content is empty")
+        
         # Create temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
-            content = await file.read()
             temp_file.write(content)
             temp_file_path = temp_file.name
         
-        # Generate document ID
+        # Generate document ID and name
         document_id = str(uuid.uuid4())
+        document_name = f"{document_id}_{file.filename}"
         
-        # Process document (will be implemented in task 4)
-        chunks_created = await ingestion_service.process_document(
-            temp_file_path, 
-            file.filename, 
-            document_id
-        )
+        # Process document
+        success = ingestion_service.process_document(temp_file_path, document_name)
+        
+        if not success:
+            logger.error("Document processing failed", extra={"filename": file.filename})
+            raise HTTPException(status_code=422, detail="Failed to process document content")
+        
+        # Get processing stats to determine chunks created
+        stats = ingestion_service.get_processing_stats()
+        total_chunks = stats.get("total_chunks", 0)
         
         # Clean up temporary file
         os.unlink(temp_file_path)
         
         logger.info(
             "Document processed successfully",
-            filename=file.filename,
-            document_id=document_id,
-            chunks_created=chunks_created
+            extra={
+                "filename": file.filename,
+                "document_id": document_id,
+                "document_name": document_name,
+                "total_chunks": total_chunks
+            }
         )
         
         return UploadResponse(
             message="Document uploaded and processed successfully",
             document_id=document_id,
-            chunks_created=chunks_created
+            chunks_created=total_chunks  # Note: This is total chunks, not just for this document
         )
     
-    except Exception as e:
-        # Clean up temporary file if it exists
-        if 'temp_file_path' in locals():
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        if temp_file_path and os.path.exists(temp_file_path):
             try:
                 os.unlink(temp_file_path)
-            except:
+            except OSError:
+                pass
+        raise
+    except Exception as e:
+        # Clean up temporary file if it exists
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+            except OSError:
                 pass
         
-        logger.error("Document processing failed", filename=file.filename, error=str(e))
-        raise HTTPException(status_code=500, detail=f"Document processing failed: {str(e)}")
+        logger.error("Document processing failed", extra={"filename": file.filename, "error": str(e)})
+        
+        # Provide more specific error messages based on exception type
+        if "PDF" in str(e) and ("encrypted" in str(e).lower() or "password" in str(e).lower()):
+            raise HTTPException(status_code=422, detail="Cannot process encrypted or password-protected PDF files")
+        elif "PDF" in str(e) and "corrupted" in str(e).lower():
+            raise HTTPException(status_code=422, detail="PDF file appears to be corrupted or invalid")
+        elif "No space left" in str(e) or "Disk full" in str(e):
+            raise HTTPException(status_code=507, detail="Insufficient storage space")
+        else:
+            raise HTTPException(status_code=500, detail=f"Document processing failed: {str(e)}")
 
 
-@app.post("/query", response_model=QueryResponse)
+@app.post("/query", 
+          response_model=QueryResponse,
+          summary="Query Documents",
+          description="Ask a natural language question about uploaded documents",
+          responses={
+              200: {"description": "Query processed successfully"},
+              400: {"description": "Invalid query or parameters", "model": ErrorResponse},
+              401: {"description": "LLM service authentication failed", "model": ErrorResponse},
+              404: {"description": "No documents available", "model": ErrorResponse},
+              429: {"description": "Rate limit exceeded", "model": ErrorResponse},
+              500: {"description": "Internal server error", "model": ErrorResponse},
+              504: {"description": "Query processing timeout", "model": ErrorResponse}
+          })
 async def query_documents(
     request: QueryRequest,
-    query_engine=Depends(get_query_engine)
+    query_engine: QueryEngine = Depends(get_query_engine)
 ) -> QueryResponse:
     """Query uploaded documents with a natural language question."""
-    logger.info("Query requested", question=request.question)
+    logger.info("Query requested", extra={"question": request.question})
     
     # Validate input
     if not request.question or not request.question.strip():
         logger.warning("Empty query submitted")
         raise HTTPException(status_code=400, detail="Question cannot be empty")
     
+    # Validate question length (reasonable limit)
+    if len(request.question.strip()) > 1000:
+        logger.warning("Query too long", extra={"question_length": len(request.question)})
+        raise HTTPException(status_code=400, detail="Question is too long (maximum 1000 characters)")
+    
+    # Validate top_k parameter if provided
+    if request.top_k is not None:
+        if request.top_k <= 0:
+            raise HTTPException(status_code=400, detail="top_k must be positive")
+        if request.top_k > 50:  # Reasonable upper limit
+            raise HTTPException(status_code=400, detail="top_k cannot exceed 50")
+    
     try:
         # Use configured top_k if not provided in request
         top_k = request.top_k or config.top_k_results
         
-        # Process query (will be implemented in task 5)
-        result = await query_engine.process_query(request.question, top_k)
+        # Check if any documents are indexed
+        vector_store = get_vector_store()
+        if vector_store.get_document_count() == 0:
+            logger.warning("No documents indexed for query")
+            raise HTTPException(
+                status_code=404, 
+                detail="No documents have been uploaded yet. Please upload documents before querying."
+            )
+        
+        # Process query
+        result = query_engine.process_query(request.question.strip(), top_k)
         
         logger.info(
             "Query processed successfully",
-            question=request.question,
-            confidence_score=result.confidence_score,
-            sources_count=len(result.source_references)
+            extra={
+                "question": request.question,
+                "confidence_score": result.confidence_score,
+                "sources_count": len(result.source_references)
+            }
         )
         
         return QueryResponse(
@@ -265,9 +485,21 @@ async def query_documents(
             confidence_score=result.confidence_score
         )
     
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
-        logger.error("Query processing failed", question=request.question, error=str(e))
-        raise HTTPException(status_code=500, detail=f"Query processing failed: {str(e)}")
+        logger.error("Query processing failed", extra={"question": request.question, "error": str(e)})
+        
+        # Provide more specific error messages based on exception type
+        if "API" in str(e) and ("rate limit" in str(e).lower() or "quota" in str(e).lower()):
+            raise HTTPException(status_code=429, detail="API rate limit exceeded. Please try again later.")
+        elif "API" in str(e) and ("authentication" in str(e).lower() or "unauthorized" in str(e).lower()):
+            raise HTTPException(status_code=401, detail="LLM service authentication failed")
+        elif "timeout" in str(e).lower():
+            raise HTTPException(status_code=504, detail="Query processing timed out")
+        else:
+            raise HTTPException(status_code=500, detail=f"Query processing failed: {str(e)}")
 
 
 @app.on_event("startup")
