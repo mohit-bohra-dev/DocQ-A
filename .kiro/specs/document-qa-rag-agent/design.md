@@ -14,16 +14,17 @@ The system follows a layered architecture with the following components:
 
 ```
 ┌─────────────────┐    ┌─────────────────┐
-│   FastAPI App   │    │   Query Engine  │
-└─────────────────┘    └─────────────────┘
-         │                       │
-┌─────────────────┐    ┌─────────────────┐
-│ Ingestion Svc   │    │ Answer Generator│
-└─────────────────┘    └─────────────────┘
-         │                       │
-┌─────────────────┐    ┌─────────────────┐
-│ Embedding Svc   │    │   Vector Store  │
-└─────────────────┘    └─────────────────┘
+│  Streamlit UI   │    │   FastAPI App   │    ┌─────────────────┐
+└─────────────────┘    └─────────────────┘    │   Query Engine  │
+         │                       │             └─────────────────┘
+         │              ┌─────────────────┐             │
+         │              │ Ingestion Svc   │    ┌─────────────────┐
+         │              └─────────────────┘    │ Answer Generator│
+         │                       │             └─────────────────┘
+         │              ┌─────────────────┐             │
+         └──────────────│ Embedding Svc   │    ┌─────────────────┐
+                        └─────────────────┘    │   Vector Store  │
+                                               └─────────────────┘
 ```
 
 ### Key Architectural Principles
@@ -42,6 +43,17 @@ The system follows a layered architecture with the following components:
   - `POST /query`: Ask questions about uploaded documents
   - `GET /health`: System health check
 - **Dependencies**: Ingestion Service, Query Engine
+
+### Streamlit UI (`streamlit_app.py`)
+- **Purpose**: Web-based user interface for document upload and querying
+- **Key Features**:
+  - File upload widget for PDF documents
+  - Text input for questions with submit button
+  - Real-time processing status and progress indicators
+  - Formatted display of answers with source references
+  - Session-based conversation history
+  - Document management interface
+- **Dependencies**: FastAPI backend via HTTP requests
 
 ### Document Ingestion Service (`ingest.py`)
 - **Purpose**: PDF processing and document indexing
@@ -133,6 +145,36 @@ class SourceReference:
     page_number: int
     chunk_id: str
 ```
+
+### UIState
+```python
+@dataclass
+class UIState:
+    uploaded_documents: List[str]
+    conversation_history: List[ConversationEntry]
+    current_question: str
+    processing_status: ProcessingStatus
+```
+
+### ConversationEntry
+```python
+@dataclass
+class ConversationEntry:
+    question: str
+    answer: str
+    source_references: List[SourceReference]
+    timestamp: datetime
+```
+
+### ProcessingStatus
+```python
+class ProcessingStatus(Enum):
+    IDLE = "idle"
+    UPLOADING = "uploading"
+    PROCESSING = "processing"
+    QUERYING = "querying"
+    ERROR = "error"
+```
 ## Correctness Properties
 
 *A property is a characteristic or behavior that should hold true across all valid executions of a system-essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
@@ -193,6 +235,22 @@ After analyzing all acceptance criteria, several properties can be consolidated 
 **Property 12: Logging operation coverage**
 *For any* system operation, appropriate log entries should be generated with sufficient detail for debugging
 **Validates: Requirements 4.3**
+
+**Property 13: UI feedback consistency**
+*For any* user action in the Streamlit interface, appropriate visual feedback should be provided during processing
+**Validates: Requirements 8.2, 8.4**
+
+**Property 14: UI error handling completeness**
+*For any* error condition, the Streamlit interface should display user-friendly error messages and maintain system stability
+**Validates: Requirements 8.4**
+
+**Property 15: Conversation history persistence**
+*For any* question-answer interaction within a session, the conversation should be maintained in the UI history
+**Validates: Requirements 8.7**
+
+**Property 16: Source reference formatting**
+*For any* generated answer with source references, the UI should display properly formatted and accessible reference information
+**Validates: Requirements 8.6**
 
 ## Error Handling
 

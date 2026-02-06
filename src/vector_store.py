@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 import numpy as np
 import faiss
+from faiss import IndexFlatIP
 
 try:
     from .interfaces import VectorStore
@@ -17,7 +18,8 @@ except ImportError:
 
 class FAISSVectorStore(VectorStore):
     """FAISS-based implementation of the VectorStore interface."""
-    
+    index: IndexFlatIP | IndexFlatIP
+
     def __init__(self, dimension: int, index_path: str = "data/faiss_index", 
                  metadata_path: str = "data/metadata.json"):
         """

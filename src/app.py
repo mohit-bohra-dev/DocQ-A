@@ -241,6 +241,9 @@ def get_query_engine() -> QueryEngine:
         )
     return _query_engine
 
+@app.get("/")
+def read_root():
+    return {"message": "Hello, FastAPI!"}
 
 @app.get("/health", 
          response_model=HealthResponse,
@@ -468,7 +471,7 @@ async def query_documents(
             )
         
         # Process query
-        result = query_engine.process_query(request.question.strip(), top_k)
+        result = await query_engine.process_query(request.question.strip(), top_k)
         
         logger.info(
             "Query processed successfully",

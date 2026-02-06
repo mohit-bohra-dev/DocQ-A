@@ -95,3 +95,17 @@ This document specifies the requirements for a Document Question-Answering AI Ag
 2. WHEN interfaces are defined THEN the RAG System SHALL abstract LLM providers to support multiple services
 3. WHEN the system is implemented THEN the RAG System SHALL include extension points for future enhancements
 4. WHEN code is structured THEN the RAG System SHALL separate ingestion and querying concerns for independent scaling
+
+### Requirement 8
+
+**User Story:** As a user, I want an intuitive web interface to interact with the document QA system, so that I can easily upload documents and ask questions without using API endpoints directly.
+
+#### Acceptance Criteria
+
+1. WHEN a user accesses the web interface THEN the Streamlit UI SHALL display a clean, intuitive layout with document upload and question input areas
+2. WHEN a user uploads a PDF document THEN the Streamlit UI SHALL provide visual feedback during processing and display success/error messages
+3. WHEN a user submits a question THEN the Streamlit UI SHALL display the answer along with source references in a readable format
+4. WHEN the system processes requests THEN the Streamlit UI SHALL show loading indicators and handle errors gracefully
+5. WHEN multiple documents are uploaded THEN the Streamlit UI SHALL display a list of processed documents with their status
+6. WHEN answers are generated THEN the Streamlit UI SHALL format source references as clickable elements showing document name and page number
+7. WHEN the interface is used THEN the Streamlit UI SHALL maintain conversation history within the session for better user experience

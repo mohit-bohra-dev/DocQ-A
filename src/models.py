@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List
+from enum import Enum
 
 
 @dataclass
@@ -57,3 +58,31 @@ class AnswerResult:
     answer: str
     confidence_score: float
     source_references: List[SourceReference]
+
+
+class ProcessingStatus(Enum):
+    """Processing status enumeration for UI."""
+    IDLE = "idle"
+    UPLOADING = "uploading"
+    PROCESSING = "processing"
+    QUERYING = "querying"
+    ERROR = "error"
+
+
+@dataclass
+class ConversationEntry:
+    """Represents a conversation entry in the UI."""
+    question: str
+    answer: str
+    source_references: List[SourceReference]
+    timestamp: datetime
+    confidence_score: float
+
+
+@dataclass
+class UIState:
+    """UI state management."""
+    uploaded_documents: List[str]
+    conversation_history: List[ConversationEntry]
+    current_question: str
+    processing_status: ProcessingStatus

@@ -1,0 +1,52 @@
+{
+    "streamlit_debug": {
+        "description": "VS Code launch configuration for debugging Streamlit app",
+        "config": {
+            "name": "Debug Streamlit App",
+            "type": "python",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5678
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}",
+                    "remoteRoot": "."
+                }
+            ],
+            "justMyCode": false,
+            "console": "integratedTerminal"
+        }
+    },
+    "fastapi_debug": {
+        "description": "VS Code launch configuration for debugging FastAPI backend",
+        "config": {
+            "name": "Debug FastAPI Backend",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/app.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        }
+    },
+    "instructions": {
+        "setup": [
+            "1. Copy the configurations from this file to your .vscode/launch.json",
+            "2. Or create .vscode/launch.json with the configurations above"
+        ],
+        "usage": [
+            "1. Start debug mode: python debug_streamlit.py",
+            "2. In VS Code: F5 or Run and Debug -> 'Debug Streamlit App'",
+            "3. Set breakpoints in streamlit_app.py or src/ files",
+            "4. Use the Streamlit UI to trigger your breakpoints"
+        ],
+        "environment_variables": {
+            "DEBUG_STREAMLIT": "Set to 'true' to enable debug mode",
+            "PYTHONPATH": "Should include the project root directory"
+        }
+    }
+}

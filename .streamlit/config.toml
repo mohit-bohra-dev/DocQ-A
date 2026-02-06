@@ -1,0 +1,37 @@
+[global]
+# Streamlit configuration for Document QA RAG Agent
+developmentMode = false
+showWarningOnDirectExecution = false
+
+[server]
+# Server settings
+port = 8501
+address = "localhost"
+baseUrlPath = ""
+enableCORS = true
+enableXsrfProtection = true
+maxUploadSize = 50
+
+[browser]
+# Browser settings
+gatherUsageStats = false
+
+[theme]
+# Theme settings
+primaryColor = "#1f77b4"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
+font = "sans serif"
+
+[runner]
+# Runner settings
+magicEnabled = true
+postScriptGC = true
+fastReruns = true
+enforceSerializableSessionState = false
+
+[logger]
+# Logging settings
+level = "info"
+messageFormat = "%(asctime)s %(message)s"
