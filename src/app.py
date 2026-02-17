@@ -245,6 +245,59 @@ def get_query_engine() -> QueryEngine:
 def read_root():
     return {"message": "Hello, FastAPI!"}
 
+@app.get("/documents",
+         summary="List Documents",
+         description="Get list of all uploaded documents")
+async def list_documents() -> Dict[str, Any]:
+    """Get list of all documents in the system."""
+    logger.info("Document list requested")
+    
+    try:
+        vector_store = get_vector_store()
+        document_names = vector_store.get_all_document_names()
+        
+        documents = []
+        for doc_name in document_names:
+            doc_info = vector_store.get_document_info(doc_name)
+            if doc_info:
+                documents.append(doc_info)
+        
+        return {
+            "total_documents": len(documents),
+            "documents": documents
+        }
+    except Exception as e:
+        logger.error(f"Failed to list documents: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list documents: {str(e)}")
+
+@app.delete("/documents/{document_name}",
+            summary="Delete Document",
+            description="Delete a specific document and all its chunks")
+async def delete_document(document_name: str) -> Dict[str, Any]:
+    """Delete a document from the system."""
+    logger.info(f"Document deletion requested", extra={"document_name": document_name})
+    
+    try:
+        vector_store = get_vector_store()
+        
+        if not vector_store.document_exists(document_name):
+            raise HTTPException(status_code=404, detail=f"Document '{document_name}' not found")
+        
+        deleted_count = vector_store.delete_document_by_name(document_name)
+        vector_store.save_index()
+        
+        logger.info(f"Document deleted successfully", extra={"document_name": document_name, "chunks_deleted": deleted_count})
+        
+        return {
+            "message": f"Document '{document_name}' deleted successfully",
+            "chunks_deleted": deleted_count
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete document: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete document: {str(e)}")
+
 @app.get("/health", 
          response_model=HealthResponse,
          summary="Health Check",
@@ -307,6 +360,7 @@ async def health_check() -> HealthResponse:
           responses={
               201: {"description": "Document uploaded and processed successfully"},
               400: {"description": "Invalid file or request", "model": ErrorResponse},
+              409: {"description": "Document already exists", "model": ErrorResponse},
               413: {"description": "File too large", "model": ErrorResponse},
               422: {"description": "Document processing failed", "model": ErrorResponse},
               500: {"description": "Internal server error", "model": ErrorResponse},
@@ -314,10 +368,11 @@ async def health_check() -> HealthResponse:
           })
 async def upload_document(
     file: UploadFile = File(..., description="PDF file to upload and process"),
+    replace_existing: bool = False,
     ingestion_service: DocumentIngestionService = Depends(get_ingestion_service)
 ) -> UploadResponse:
     """Upload and process a PDF document."""
-    logger.info("Document upload requested", extra={"filename": file.filename})
+    logger.info("Document upload requested", extra={"filename": file.filename, "replace_existing": replace_existing})
     
     # Validate file is provided
     if not file.filename:
@@ -328,6 +383,25 @@ async def upload_document(
     if not file.filename.lower().endswith('.pdf'):
         logger.warning("Invalid file type uploaded", extra={"filename": file.filename})
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    
+    # Check for duplicate document
+    vector_store = get_vector_store()
+    document_name = file.filename
+    
+    # Check if document already exists
+    if vector_store.document_exists(document_name):
+        if not replace_existing:
+            logger.warning("Duplicate document upload attempted", extra={"filename": file.filename})
+            raise HTTPException(
+                status_code=409,
+                detail=f"Document '{file.filename}' already exists. Set replace_existing=true to replace it."
+            )
+        else:
+            # Delete existing document
+            deleted_count = vector_store.delete_document_by_name(document_name)
+            logger.info(f"Deleted existing document", extra={"filename": file.filename, "chunks_deleted": deleted_count})
+            # Save the updated index
+            vector_store.save_index()
     
     # Validate file size (if available)
     if hasattr(file, 'size') and file.size is not None:
@@ -357,9 +431,8 @@ async def upload_document(
             temp_file.write(content)
             temp_file_path = temp_file.name
         
-        # Generate document ID and name
-        document_id = str(uuid.uuid4())
-        document_name = f"{document_id}_{file.filename}"
+        # Use simple document name without UUID
+        document_id = document_name  # Use filename as ID for clarity
         
         # Process document
         success = ingestion_service.process_document(temp_file_path, document_name)
@@ -381,14 +454,15 @@ async def upload_document(
                 "filename": file.filename,
                 "document_id": document_id,
                 "document_name": document_name,
-                "total_chunks": total_chunks
+                "total_chunks": total_chunks,
+                "replaced": replace_existing
             }
         )
         
         return UploadResponse(
-            message="Document uploaded and processed successfully",
+            message="Document uploaded and processed successfully" if not replace_existing else "Document replaced successfully",
             document_id=document_id,
-            chunks_created=total_chunks  # Note: This is total chunks, not just for this document
+            chunks_created=total_chunks
         )
     
     except HTTPException:

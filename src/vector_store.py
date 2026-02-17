@@ -285,3 +285,125 @@ class FAISSVectorStore(VectorStore):
         self.metadata_store.clear()
         self.chunks_store.clear()
         self.next_id = 0
+    
+    def get_all_document_names(self) -> List[str]:
+        """
+        Get list of all unique document names in the store.
+        
+        Returns:
+            List of document names
+        """
+        unique_docs = set()
+        for metadata in self.metadata_store.values():
+            unique_docs.add(metadata.document_name)
+        return sorted(list(unique_docs))
+    
+    def delete_document_by_name(self, document_name: str) -> int:
+        """
+        Delete all chunks belonging to a specific document.
+        
+        Args:
+            document_name: Name of the document to delete
+            
+        Returns:
+            Number of chunks deleted
+        """
+        # Find all indices for this document
+        indices_to_delete = []
+        for idx, metadata in self.metadata_store.items():
+            if metadata.document_name == document_name:
+                indices_to_delete.append(idx)
+        
+        if not indices_to_delete:
+            return 0
+        
+        # Remove from metadata and chunks stores
+        for idx in indices_to_delete:
+            self.metadata_store.pop(idx, None)
+            self.chunks_store.pop(idx, None)
+        
+        # Rebuild FAISS index without deleted items
+        self._rebuild_index()
+        
+        return len(indices_to_delete)
+    
+    def _rebuild_index(self) -> None:
+        """Rebuild the FAISS index after deletions."""
+        # Create new index
+        new_index = faiss.IndexFlatIP(self.dimension)
+        new_metadata_store = {}
+        new_chunks_store = {}
+        new_id = 0
+        
+        # Get all remaining embeddings
+        if self.index.ntotal > 0:
+            # Reconstruct embeddings from existing index
+            all_embeddings = []
+            id_mapping = {}
+            
+            for old_id in sorted(self.metadata_store.keys()):
+                if old_id in self.chunks_store:
+                    # Get embedding from old index
+                    embedding = self.index.reconstruct(old_id)
+                    all_embeddings.append(embedding)
+                    id_mapping[new_id] = old_id
+                    new_id += 1
+            
+            if all_embeddings:
+                # Add to new index
+                embeddings_array = np.array(all_embeddings, dtype=np.float32)
+                new_index.add(embeddings_array)
+                
+                # Rebuild metadata and chunks stores with new IDs
+                for new_id, old_id in id_mapping.items():
+                    new_metadata_store[new_id] = self.metadata_store[old_id]
+                    new_chunks_store[new_id] = self.chunks_store[old_id]
+        
+        # Replace old index and stores
+        self.index = new_index
+        self.metadata_store = new_metadata_store
+        self.chunks_store = new_chunks_store
+        self.next_id = new_id
+    
+    def document_exists(self, document_name: str) -> bool:
+        """
+        Check if a document with the given name exists in the store.
+        
+        Args:
+            document_name: Name of the document to check
+            
+        Returns:
+            True if document exists, False otherwise
+        """
+        for metadata in self.metadata_store.values():
+            if metadata.document_name == document_name:
+                return True
+        return False
+    
+    def get_document_info(self, document_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get information about a specific document.
+        
+        Args:
+            document_name: Name of the document
+            
+        Returns:
+            Dictionary with document information or None if not found
+        """
+        chunks_count = 0
+        pages = set()
+        
+        for metadata in self.metadata_store.values():
+            if metadata.document_name == document_name:
+                chunks_count += 1
+                pages.add(metadata.page_number)
+        
+        if chunks_count == 0:
+            return None
+        
+        return {
+            "document_name": document_name,
+            "chunks_count": chunks_count,
+            "pages_count": len(pages),
+            "pages": sorted(list(pages))
+        }

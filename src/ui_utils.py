@@ -46,7 +46,7 @@ class APIClient:
                 "error": f"Network error: {str(e)}"
             }
     
-    def upload_document(self, file_name: str, file_content: bytes, timeout: int = 60) -> Dict:
+    def upload_document(self, file_name: str, file_content: bytes, replace_existing: bool = False, timeout: int = 60) -> Dict:
         """Upload a document to the backend."""
         try:
             # Validate inputs
@@ -58,11 +58,13 @@ class APIClient:
             
             # Prepare the multipart form data
             files = {"file": (file_name, file_content, "application/pdf")}
+            data = {"replace_existing": str(replace_existing).lower()}
             
             # Make the request without Content-Type header (let requests handle it)
             response = requests.post(
                 f"{self.base_url}/upload", 
-                files=files, 
+                files=files,
+                data=data,
                 timeout=timeout,
                 headers={"User-Agent": "DocumentQA-StreamlitUI/1.0"}
             )
@@ -73,6 +75,10 @@ class APIClient:
             
             if response.status_code == 201:
                 return {"success": True, "data": response.json()}
+            elif response.status_code == 409:
+                # Document already exists
+                error_data = self._parse_error_response(response)
+                return {"success": False, "error": error_data, "duplicate": True}
             else:
                 # Get detailed error information
                 error_data = self._parse_error_response(response)
@@ -90,6 +96,38 @@ class APIClient:
         except Exception as e:
             print(f"Unexpected upload error: {e}")
             return {"success": False, "error": f"Unexpected error: {str(e)}"}
+    
+    def list_documents(self, timeout: int = 5) -> Dict:
+        """Get list of all documents from the backend."""
+        try:
+            response = self.session.get(
+                f"{self.base_url}/documents",
+                timeout=timeout
+            )
+            
+            if response.status_code == 200:
+                return {"success": True, "data": response.json()}
+            else:
+                error_data = self._parse_error_response(response)
+                return {"success": False, "error": error_data}
+        except requests.exceptions.RequestException as e:
+            return {"success": False, "error": f"Failed to list documents: {str(e)}"}
+    
+    def delete_document(self, document_name: str, timeout: int = 10) -> Dict:
+        """Delete a document from the backend."""
+        try:
+            response = self.session.delete(
+                f"{self.base_url}/documents/{document_name}",
+                timeout=timeout
+            )
+            
+            if response.status_code == 200:
+                return {"success": True, "data": response.json()}
+            else:
+                error_data = self._parse_error_response(response)
+                return {"success": False, "error": error_data}
+        except requests.exceptions.RequestException as e:
+            return {"success": False, "error": f"Failed to delete document: {str(e)}"}
     
     def query_documents(self, question: str, top_k: int = 5, timeout: int = 30) -> Dict:
         """Query documents via the backend."""

@@ -72,6 +72,9 @@ def initialize_session_state():
         if "health_checker" not in st.session_state:
             st.session_state.health_checker = HealthChecker()
         
+        if "pending_upload" not in st.session_state:
+            st.session_state.pending_upload = None
+        
         if DEBUG_MODE:
             debug_session_state(st.session_state)
 
@@ -219,64 +222,104 @@ def handle_document_upload(uploaded_file):
         st.error(f"❌ {validation_result['error']}")
         return False
     
+    # Check if document already exists
+    existing_docs = [doc["name"] for doc in st.session_state.uploaded_documents]
+    is_duplicate = uploaded_file.name in existing_docs
+    
     # Display file info and upload button
     col_upload, col_info = st.columns([1, 2])
     
     with col_info:
         st.write(f"📄 **{uploaded_file.name}**")
         st.caption(f"Size: {format_file_size(len(uploaded_file.getvalue()))}")
+        if is_duplicate:
+            st.warning("⚠️ This document already exists!")
     
     with col_upload:
-        if st.button("Upload & Process", type="primary", key="upload_btn"):
-            return process_upload(uploaded_file)
+        # Show replace checkbox if duplicate
+        if is_duplicate:
+            replace = st.checkbox("Replace existing?", key="replace_checkbox")
+        else:
+            replace = False
+        
+        button_text = "Replace & Process" if (is_duplicate and replace) else "Upload & Process"
+        if st.button(button_text, type="primary", key="upload_btn"):
+            return process_upload(uploaded_file, replace)
     
     return False
 
 
-def process_upload(uploaded_file):
+def process_upload(uploaded_file, replace_existing=False):
     """Process the document upload."""
     st.session_state.processing_status = ProcessingStatus.UPLOADING
+    st.session_state.pending_upload = {
+        "file": uploaded_file,
+        "replace": replace_existing
+    }
     st.rerun()
 
 
-def handle_upload_processing(uploaded_file):
+def handle_upload_processing(uploaded_file, replace_existing=False):
     """Handle the actual upload processing."""
     with DebugContext("handle_upload_processing"):
         st.session_state.processing_status = ProcessingStatus.PROCESSING
         
         with st.spinner("Processing document..."):
             try:
-                debug_print(f"Uploading file: {uploaded_file.name}")
+                debug_print(f"Uploading file: {uploaded_file.name}, replace={replace_existing}")
                 result = st.session_state.api_client.upload_document(
                     uploaded_file.name, 
-                    uploaded_file.getvalue()
+                    uploaded_file.getvalue(),
+                    replace_existing=replace_existing
                 )
-                debug_api_call("upload_document", {"filename": uploaded_file.name}, result)
+                debug_api_call("upload_document", {"filename": uploaded_file.name, "replace": replace_existing}, result)
             except Exception as e:
                 debug_exception(e, "upload_document")
                 result = {"success": False, "error": f"Upload failed: {str(e)}"}
         
         if result["success"]:
-            st.success("✅ Document uploaded and processed successfully!")
+            message = "✅ Document replaced successfully!" if replace_existing else "✅ Document uploaded and processed successfully!"
+            st.success(message)
             
-            # Add to uploaded documents list
+            # Update uploaded documents list
             doc_info = {
                 "name": uploaded_file.name,
                 "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "chunks_created": result["data"].get("chunks_created", 0)
             }
-            st.session_state.uploaded_documents.append(doc_info)
-            debug_print(f"Added document to session: {doc_info}")
+            
+            if replace_existing:
+                # Update existing entry
+                for i, doc in enumerate(st.session_state.uploaded_documents):
+                    if doc["name"] == uploaded_file.name:
+                        st.session_state.uploaded_documents[i] = doc_info
+                        break
+            else:
+                # Add new entry
+                st.session_state.uploaded_documents.append(doc_info)
+            
+            debug_print(f"Updated document in session: {doc_info}")
             
             # Force refresh health status to update document count
             st.session_state.health_checker.get_health_status(force_refresh=True)
             
             st.session_state.processing_status = ProcessingStatus.IDLE
+            st.session_state.pending_upload = None
             time.sleep(1)  # Brief pause to show success message
+            st.rerun()
+        elif result.get("duplicate"):
+            # Handle duplicate error
+            st.error(f"❌ {result['error']}")
+            st.info("💡 Check the 'Replace existing?' checkbox to replace the document.")
+            st.session_state.processing_status = ProcessingStatus.ERROR
+            st.session_state.pending_upload = None
+            time.sleep(3)
+            st.session_state.processing_status = ProcessingStatus.IDLE
             st.rerun()
         else:
             st.error(f"❌ Upload failed: {result['error']}")
             st.session_state.processing_status = ProcessingStatus.ERROR
+            st.session_state.pending_upload = None
             time.sleep(3)  # Show error for longer
             st.session_state.processing_status = ProcessingStatus.IDLE
             st.rerun()
@@ -367,9 +410,9 @@ def main():
         )
         
         # Handle upload processing if in progress
-        if (st.session_state.processing_status == ProcessingStatus.UPLOADING and
-            uploaded_file is not None):
-            handle_upload_processing(uploaded_file)
+        if st.session_state.pending_upload is not None:
+            pending = st.session_state.pending_upload
+            handle_upload_processing(pending["file"], pending["replace"])
         elif uploaded_file is not None:
             handle_document_upload(uploaded_file)
         
