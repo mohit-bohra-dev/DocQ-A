@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ValidationError
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import os
 import tempfile
 import uuid
@@ -86,12 +86,14 @@ class QueryRequest(BaseModel):
     """Request model for querying documents."""
     question: str
     top_k: Optional[int] = None
+    document_name: Optional[str] = None  # NEW: Filter by specific document
     
     class Config:
         json_schema_extra = {
             "example": {
                 "question": "What is the main topic of the document?",
-                "top_k": 5
+                "top_k": 5,
+                "document_name": "report.pdf"
             }
         }
 
@@ -544,13 +546,18 @@ async def query_documents(
                 detail="No documents have been uploaded yet. Please upload documents before querying."
             )
         
-        # Process query
-        result = await query_engine.process_query(request.question.strip(), top_k)
+        # Process query with optional document filter
+        result = await query_engine.process_query(
+            request.question.strip(), 
+            top_k, 
+            document_name=request.document_name
+        )
         
         logger.info(
             "Query processed successfully",
             extra={
                 "question": request.question,
+                "document_filter": request.document_name,
                 "confidence_score": result.confidence_score,
                 "sources_count": len(result.source_references)
             }

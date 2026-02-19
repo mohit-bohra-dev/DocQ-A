@@ -129,10 +129,13 @@ class APIClient:
         except requests.exceptions.RequestException as e:
             return {"success": False, "error": f"Failed to delete document: {str(e)}"}
     
-    def query_documents(self, question: str, top_k: int = 5, timeout: int = 30) -> Dict:
+    def query_documents(self, question: str, top_k: int = 5, document_name: Optional[str] = None, timeout: int = 30) -> Dict:
         """Query documents via the backend."""
         try:
             payload = {"question": question, "top_k": top_k}
+            if document_name:
+                payload["document_name"] = document_name
+            
             response = self.session.post(
                 f"{self.base_url}/query", 
                 json=payload, 

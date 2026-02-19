@@ -325,7 +325,7 @@ def handle_upload_processing(uploaded_file, replace_existing=False):
             st.rerun()
 
 
-def handle_question_submission(question: str, top_k: int):
+def handle_question_submission(question: str, top_k: int, document_name: Optional[str] = None):
     """Handle question submission and processing."""
     with DebugContext("handle_question_submission"):
         st.session_state.processing_status = ProcessingStatus.QUERYING
@@ -333,9 +333,13 @@ def handle_question_submission(question: str, top_k: int):
         
         with st.spinner("Searching for answer..."):
             try:
-                debug_print(f"Querying: {question[:50]}... (top_k={top_k})")
-                result = st.session_state.api_client.query_documents(question.strip(), top_k)
-                debug_api_call("query_documents", {"question": question[:50], "top_k": top_k}, result)
+                debug_print(f"Querying: {question[:50]}... (top_k={top_k}, document={document_name})")
+                result = st.session_state.api_client.query_documents(
+                    question.strip(), 
+                    top_k, 
+                    document_name=document_name
+                )
+                debug_api_call("query_documents", {"question": question[:50], "top_k": top_k, "document": document_name}, result)
             except Exception as e:
                 debug_exception(e, "query_documents")
                 result = {"success": False, "error": f"Query failed: {str(e)}"}
@@ -428,6 +432,20 @@ def main():
         else:
             question_disabled = False
         
+        # Document selector
+        if not question_disabled:
+            document_options = ["All Documents"] + [doc["name"] for doc in st.session_state.uploaded_documents]
+            selected_document = st.selectbox(
+                "Select document to query:",
+                options=document_options,
+                index=0,
+                help="Choose a specific document or search all documents"
+            )
+            # Convert "All Documents" to None for API
+            document_filter = None if selected_document == "All Documents" else selected_document
+        else:
+            document_filter = None
+        
         question = st.text_area(
             "Enter your question:",
             value=st.session_state.current_question,
@@ -460,7 +478,7 @@ def main():
         
         # Handle question submission
         if ask_button and question.strip():
-            handle_question_submission(question, top_k)
+            handle_question_submission(question, top_k, document_filter)
     
     with col2:
         # Right column content

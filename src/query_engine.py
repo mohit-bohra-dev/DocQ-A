@@ -39,18 +39,19 @@ class QueryEngine:
         self.config = config
         logger.info("Query engine initialized")
     
-    async def process_query(self, question: str, top_k: Optional[int] = None) -> QueryResult:
+    async def process_query(self, question: str, top_k: Optional[int] = None, document_name: Optional[str] = None) -> QueryResult:
         """
         Process a user question and return a complete query result.
         
         Args:
             question: User's natural language question
             top_k: Number of top results to retrieve (uses config default if None)
+            document_name: Optional document name to filter results (None = search all documents)
             
         Returns:
             QueryResult containing answer, sources, and metadata
         """
-        logger.info(f"Processing query: {question[:100]}...")
+        logger.info(f"Processing query: {question[:100]}... (document_filter: {document_name})")
         
         # Use configured top_k if not provided
         if top_k is None:
@@ -62,18 +63,27 @@ class QueryEngine:
             logger.debug(f"Generated query embedding with dimension: {len(query_embedding)}")
             
             # Step 2: Retrieve relevant context
-            retrieved_chunks = self._retrieve_context(query_embedding, top_k)
+            retrieved_chunks = self._retrieve_context(query_embedding, top_k, document_name)
             logger.info(f"Retrieved {len(retrieved_chunks)} relevant chunks")
             
             # Step 3: Generate answer if context is available
             if not retrieved_chunks:
-                logger.info("No relevant context found, returning 'I don't know' response")
-                return QueryResult(
-                    answer="I don't know. I couldn't find relevant information in the uploaded documents to answer your question.",
-                    source_references=[],
-                    confidence_score=0.0,
-                    retrieved_chunks=[]
-                )
+                if document_name:
+                    logger.info(f"No relevant context found in document '{document_name}'")
+                    return QueryResult(
+                        answer=f"I don't know. I couldn't find relevant information in the document '{document_name}' to answer your question.",
+                        source_references=[],
+                        confidence_score=0.0,
+                        retrieved_chunks=[]
+                    )
+                else:
+                    logger.info("No relevant context found, returning 'I don't know' response")
+                    return QueryResult(
+                        answer="I don't know. I couldn't find relevant information in the uploaded documents to answer your question.",
+                        source_references=[],
+                        confidence_score=0.0,
+                        retrieved_chunks=[]
+                    )
             
             # Step 4: Generate grounded answer
             answer_result = self.answer_generator.generate_answer(question, retrieved_chunks)
@@ -115,13 +125,14 @@ class QueryEngine:
             logger.error(f"Failed to generate query embedding: {e}")
             raise
     
-    def _retrieve_context(self, query_embedding: List[float], top_k: int) -> List[TextChunk]:
+    def _retrieve_context(self, query_embedding: List[float], top_k: int, document_name: Optional[str] = None) -> List[TextChunk]:
         """
         Retrieve relevant context using vector similarity search.
         
         Args:
             query_embedding: Query embedding vector
             top_k: Number of top results to retrieve
+            document_name: Optional document name to filter results (None = search all documents)
             
         Returns:
             List of relevant text chunks ordered by similarity
@@ -129,6 +140,14 @@ class QueryEngine:
         try:
             # Perform similarity search
             search_results = self.vector_store.search_similar(query_embedding, top_k)
+            
+            # Filter by document name if specified
+            if document_name:
+                search_results = [
+                    result for result in search_results 
+                    if result.metadata.document_name == document_name
+                ]
+                logger.debug(f"Filtered to {len(search_results)} chunks from document '{document_name}'")
             
             # Extract chunks from search results
             chunks = [result.chunk for result in search_results]
