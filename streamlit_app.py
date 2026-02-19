@@ -57,17 +57,30 @@ def initialize_session_state():
         if "conversation_history" not in st.session_state:
             st.session_state.conversation_history = []
         
+        if "api_client" not in st.session_state:
+            st.session_state.api_client = APIClient()
+        
         if "uploaded_documents" not in st.session_state:
-            st.session_state.uploaded_documents = []
+            # Load existing documents from backend
+            result = st.session_state.api_client.list_documents()
+            if result["success"] and result["data"].get("documents"):
+                # Transform backend format to UI format
+                st.session_state.uploaded_documents = [
+                    {
+                        "name": doc["document_name"],
+                        "uploaded_at": "Previously uploaded",
+                        "chunks_created": doc.get("chunks_count", 0)
+                    }
+                    for doc in result["data"]["documents"]
+                ]
+            else:
+                st.session_state.uploaded_documents = []
         
         if "processing_status" not in st.session_state:
             st.session_state.processing_status = ProcessingStatus.IDLE
         
         if "current_question" not in st.session_state:
             st.session_state.current_question = ""
-        
-        if "api_client" not in st.session_state:
-            st.session_state.api_client = APIClient()
         
         if "health_checker" not in st.session_state:
             st.session_state.health_checker = HealthChecker()
