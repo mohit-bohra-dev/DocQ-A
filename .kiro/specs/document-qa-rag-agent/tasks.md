@@ -62,6 +62,54 @@
   - **Property 7: Retrieval result ordering**
   - **Validates: Requirements 2.2**
 
+- [ ] 3.3 Implement vector store abstraction and Qdrant support
+  - Create abstract VectorStore base class with unified interface
+  - Refactor existing FAISS implementation to use abstract interface
+  - Implement QdrantVectorStore class with connection management
+  - Add Qdrant collection creation and configuration
+  - Implement Qdrant embedding storage with metadata as payload
+  - Implement Qdrant similarity search with metadata retrieval
+  - Add configuration management for vector store backend selection
+  - Support both local Qdrant and Qdrant Cloud connections
+  - Add health check and error handling for Qdrant operations
+  - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 9.8, 9.9_
+
+- [ ]* 3.3.1 Write property test for vector store backend interchangeability
+  - **Property 17: Vector store backend interchangeability**
+  - **Validates: Requirements 9.1, 9.6**
+
+- [ ]* 3.3.2 Write property test for Qdrant configuration flexibility
+  - **Property 18: Qdrant configuration flexibility**
+  - **Validates: Requirements 9.2, 9.8, 9.9**
+
+- [ ]* 3.3.3 Write property test for Qdrant collection management
+  - **Property 19: Qdrant collection management**
+  - **Validates: Requirements 9.3**
+
+- [ ]* 3.3.4 Write property test for Qdrant metadata persistence
+  - **Property 20: Qdrant metadata persistence**
+  - **Validates: Requirements 9.4**
+
+- [ ]* 3.3.5 Write property test for Qdrant search consistency
+  - **Property 21: Qdrant search consistency**
+  - **Validates: Requirements 9.5**
+
+- [ ]* 3.3.6 Write property test for Qdrant error handling
+  - **Property 22: Qdrant error handling**
+  - **Validates: Requirements 9.7**
+
+- [ ]* 3.3.7 Write unit tests for Qdrant integration
+  - Test connection to local Qdrant instance
+  - Test connection to Qdrant Cloud with API key
+  - Test collection creation and configuration
+  - Test error scenarios (connection failures, timeouts, API errors)
+  - _Requirements: 9.2, 9.7, 9.8_
+
+- [ ] 3.4 Checkpoint - Verify vector store abstraction
+  - Ensure all tests pass for both FAISS and Qdrant backends
+  - Verify seamless switching between backends
+  - Ask the user if questions arise.
+
 - [x] 4. Implement PDF ingestion service
 
 
@@ -141,7 +189,10 @@
   - Include API documentation with example requests/responses
   - Add inline code comments explaining design decisions
   - Document extension points for future enhancements
-  - _Requirements: 6.1, 6.2, 6.3, 6.4_
+  - Document vector store configuration options (FAISS vs Qdrant)
+  - Add Qdrant setup instructions for local and cloud deployments
+  - Include examples of switching between vector store backends
+  - _Requirements: 6.1, 6.2, 6.3, 6.4, 9.1, 9.2, 9.8, 9.9_
 
 - [ ] 10. Final integration and testing
   - Perform end-to-end testing with real PDF documents

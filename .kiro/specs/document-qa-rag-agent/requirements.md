@@ -8,7 +8,7 @@ This document specifies the requirements for a Document Question-Answering AI Ag
 
 - **RAG System**: The complete Retrieval-Augmented Generation pipeline including ingestion, indexing, retrieval, and answer generation
 - **Document Ingestion Service**: The component responsible for processing PDF files and converting them into searchable chunks
-- **Vector Store**: The FAISS-based database that stores document embeddings and metadata
+- **Vector Store**: The database that stores document embeddings and metadata (supports FAISS and Qdrant backends)
 - **Query Engine**: The component that processes user questions and retrieves relevant context
 - **Answer Generator**: The LLM-powered component that generates responses based on retrieved context
 - **Chunk**: A segment of document text with configurable size and overlap for processing
@@ -109,3 +109,19 @@ This document specifies the requirements for a Document Question-Answering AI Ag
 5. WHEN multiple documents are uploaded THEN the Streamlit UI SHALL display a list of processed documents with their status
 6. WHEN answers are generated THEN the Streamlit UI SHALL format source references as clickable elements showing document name and page number
 7. WHEN the interface is used THEN the Streamlit UI SHALL maintain conversation history within the session for better user experience
+
+### Requirement 9
+
+**User Story:** As a developer, I want to support Qdrant as an alternative vector database, so that I can leverage its advanced features, scalability, and cloud-native capabilities for production deployments.
+
+#### Acceptance Criteria
+
+1. WHEN the system is configured THEN the RAG System SHALL support both FAISS and Qdrant as vector store backends through a unified interface
+2. WHEN Qdrant is selected THEN the Vector Store SHALL connect to Qdrant using configurable connection parameters (host, port, API key, collection name)
+3. WHEN documents are ingested with Qdrant THEN the Vector Store SHALL create or update collections with appropriate vector dimensions and distance metrics
+4. WHEN embeddings are stored in Qdrant THEN the Vector Store SHALL persist metadata including chunk ID, page number, document name, and chunk text as payload
+5. WHEN similarity search is performed THEN the Vector Store SHALL query Qdrant and return the top-k most relevant chunks with their metadata
+6. WHEN the system switches between vector stores THEN the RAG System SHALL maintain consistent behavior and API contracts regardless of the backend
+7. WHEN Qdrant operations fail THEN the RAG System SHALL handle connection errors, timeout errors, and API errors gracefully with appropriate logging
+8. WHEN the system is deployed THEN the RAG System SHALL support both local Qdrant instances and Qdrant Cloud connections
+9. WHEN vector store selection occurs THEN the RAG System SHALL allow runtime configuration through environment variables or configuration files

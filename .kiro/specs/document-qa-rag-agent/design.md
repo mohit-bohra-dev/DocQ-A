@@ -32,7 +32,8 @@ The system follows a layered architecture with the following components:
 - **Stateless Design**: API endpoints are stateless where possible, with state managed in the vector store
 - **Modular Components**: Each component has a single responsibility and clear interfaces
 - **Provider Abstraction**: LLM and embedding providers are abstracted for easy switching
-- **Local Persistence**: All data is stored locally using FAISS for vector operations and file system for metadata
+- **Vector Store Abstraction**: Vector database backends (FAISS, Qdrant) are abstracted through a unified interface
+- **Flexible Persistence**: Support for both local persistence (FAISS) and cloud-native vector databases (Qdrant)
 
 ## Components and Interfaces
 
@@ -71,13 +72,15 @@ The system follows a layered architecture with the following components:
 - **Dependencies**: Embedding Service, Vector Store, Answer Generator
 
 ### Vector Store (`vector_store.py`)
-- **Purpose**: FAISS-based vector operations and persistence
+- **Purpose**: Abstract interface for vector database operations with multiple backend support
 - **Key Functions**:
   - `add_embeddings(embeddings: List[List[float]], metadata: List[ChunkMetadata]) -> None`
   - `search_similar(query_embedding: List[float], top_k: int) -> List[SearchResult]`
-  - `save_index(file_path: str) -> None`
-  - `load_index(file_path: str) -> None`
-- **Storage**: Local FAISS index files and JSON metadata
+  - `save_index(file_path: str) -> None` (FAISS only)
+  - `load_index(file_path: str) -> None` (FAISS only)
+- **Implementations**:
+  - **FAISSVectorStore**: Local FAISS index files and JSON metadata
+  - **QdrantVectorStore**: Qdrant client with collection management and cloud support
 
 ### Embedding Service (`embeddings.py`)
 - **Purpose**: Text-to-vector conversion using consistent embedding models
@@ -94,6 +97,24 @@ The system follows a layered architecture with the following components:
 - **Provider Support**: Abstracted LLM interface (Gemini, OpenAI, etc.)
 
 ## Data Models
+
+### VectorStoreConfig
+```python
+@dataclass
+class VectorStoreConfig:
+    backend: str  # "faiss" or "qdrant"
+    # FAISS-specific
+    index_path: Optional[str] = None
+    metadata_path: Optional[str] = None
+    # Qdrant-specific
+    host: Optional[str] = None
+    port: Optional[int] = None
+    api_key: Optional[str] = None
+    collection_name: Optional[str] = None
+    use_cloud: bool = False
+    vector_dimension: int = 768
+    distance_metric: str = "cosine"
+```
 
 ### TextChunk
 ```python
@@ -175,6 +196,90 @@ class ProcessingStatus(Enum):
     QUERYING = "querying"
     ERROR = "error"
 ```
+
+## Vector Store Architecture
+
+The system implements a pluggable vector store architecture that supports multiple backends through a unified interface. This design allows seamless switching between FAISS (local, file-based) and Qdrant (cloud-native, scalable) without changing application code.
+
+### Abstract Vector Store Interface
+
+```python
+class VectorStore(ABC):
+    @abstractmethod
+    def add_embeddings(self, embeddings: List[List[float]], metadata: List[ChunkMetadata]) -> None:
+        """Add embeddings with metadata to the vector store"""
+        pass
+    
+    @abstractmethod
+    def search_similar(self, query_embedding: List[float], top_k: int) -> List[SearchResult]:
+        """Search for similar vectors and return top-k results"""
+        pass
+    
+    @abstractmethod
+    def initialize(self) -> None:
+        """Initialize the vector store (create collections, load indices, etc.)"""
+        pass
+    
+    @abstractmethod
+    def health_check(self) -> bool:
+        """Check if the vector store is accessible and healthy"""
+        pass
+```
+
+### FAISS Implementation
+
+The FAISS implementation provides local, file-based vector storage suitable for development and single-machine deployments:
+
+- **Index Type**: Uses FAISS IndexFlatL2 for exact similarity search
+- **Metadata Storage**: Separate JSON file for chunk metadata
+- **Persistence**: Manual save/load operations to disk
+- **Advantages**: No external dependencies, fast for small-to-medium datasets, simple setup
+- **Limitations**: Single-machine only, manual scaling, limited query features
+
+### Qdrant Implementation
+
+The Qdrant implementation provides cloud-native vector storage with advanced features:
+
+- **Connection Modes**: 
+  - Local Qdrant instance (Docker or standalone)
+  - Qdrant Cloud with API key authentication
+- **Collection Management**:
+  - Automatic collection creation with configurable vector dimensions
+  - Distance metric configuration (cosine, euclidean, dot product)
+  - Payload schema for metadata storage
+- **Metadata Storage**: Stored as payload within Qdrant (chunk_id, page_number, document_name, chunk_text)
+- **Advantages**: Horizontal scaling, advanced filtering, cloud-native, production-ready
+- **Features**: Built-in replication, snapshots, filtering by metadata, hybrid search capabilities
+
+### Configuration Strategy
+
+Vector store selection is determined at runtime through configuration:
+
+```python
+# Environment variables
+VECTOR_STORE_BACKEND=qdrant  # or "faiss"
+
+# Qdrant-specific
+QDRANT_HOST=localhost
+QDRANT_PORT=6333
+QDRANT_API_KEY=your-api-key  # Optional, for Qdrant Cloud
+QDRANT_COLLECTION=document_qa
+QDRANT_USE_CLOUD=false
+
+# FAISS-specific
+FAISS_INDEX_PATH=./data/faiss_index
+FAISS_METADATA_PATH=./data/metadata.json
+```
+
+### Migration Path
+
+The abstraction enables smooth migration between backends:
+
+1. **Development**: Start with FAISS for simplicity
+2. **Testing**: Switch to local Qdrant for production-like testing
+3. **Production**: Deploy with Qdrant Cloud for scalability
+4. **Data Migration**: Export embeddings from FAISS, import to Qdrant using the same metadata structure
+
 ## Correctness Properties
 
 *A property is a characteristic or behavior that should hold true across all valid executions of a system-essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
@@ -252,6 +357,30 @@ After analyzing all acceptance criteria, several properties can be consolidated 
 *For any* generated answer with source references, the UI should display properly formatted and accessible reference information
 **Validates: Requirements 8.6**
 
+**Property 17: Vector store backend interchangeability**
+*For any* vector store operation (add, search, initialize), both FAISS and Qdrant backends should produce equivalent results and maintain consistent API contracts
+**Validates: Requirements 9.1, 9.6**
+
+**Property 18: Qdrant configuration flexibility**
+*For any* valid Qdrant configuration (local instance, cloud instance, different connection parameters), the system should successfully connect and operate correctly
+**Validates: Requirements 9.2, 9.8, 9.9**
+
+**Property 19: Qdrant collection management**
+*For any* document ingestion operation with Qdrant, collections should be created or updated with correct vector dimensions and distance metrics matching the embedding model
+**Validates: Requirements 9.3**
+
+**Property 20: Qdrant metadata persistence**
+*For any* embedding stored in Qdrant with metadata, retrieving the embedding should return all metadata fields (chunk_id, page_number, document_name, chunk_text) intact
+**Validates: Requirements 9.4**
+
+**Property 21: Qdrant search consistency**
+*For any* similarity search with parameter k using Qdrant, the system should return exactly k results with complete metadata, ordered by similarity score
+**Validates: Requirements 9.5**
+
+**Property 22: Qdrant error handling**
+*For any* Qdrant-specific error condition (connection failure, timeout, API error), the system should handle the error gracefully, log appropriate information, and return proper error responses
+**Validates: Requirements 9.7**
+
 ## Error Handling
 
 The system implements comprehensive error handling across all components:
@@ -267,6 +396,11 @@ The system implements comprehensive error handling across all components:
 - **Disk space issues**: Check available space, log warning, return HTTP 507
 - **Permission errors**: Log security error, return HTTP 500
 - **Index not found**: Initialize new index, log info message
+- **Qdrant connection failures**: Retry with exponential backoff, log connection details, return HTTP 503
+- **Qdrant timeout errors**: Log timeout duration, return HTTP 504
+- **Qdrant API errors**: Log error response, return HTTP 502
+- **Qdrant authentication failures**: Log security error, return HTTP 401
+- **Collection not found**: Create collection automatically, log info message
 
 ### LLM Provider Errors
 - **API rate limits**: Implement exponential backoff, return HTTP 429
