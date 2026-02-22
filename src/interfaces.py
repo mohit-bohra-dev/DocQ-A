@@ -1,7 +1,7 @@
 """Core interfaces and abstract base classes for the RAG system."""
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 try:
     from .models import TextChunk, SearchResult, ChunkMetadata, AnswerResult
 except ImportError:
@@ -29,30 +29,70 @@ class EmbeddingProvider(ABC):
 
 class VectorStore(ABC):
     """Abstract interface for vector storage and retrieval."""
-    
+
     @abstractmethod
     def add_embeddings(self, embeddings: List[List[float]], metadata: List[ChunkMetadata]) -> None:
         """Add embeddings with metadata to the store."""
         pass
-    
+
+    @abstractmethod
+    def add_chunks_with_embeddings(
+        self,
+        chunks: List[TextChunk],
+        embeddings: List[List[float]],
+        metadata: List[ChunkMetadata],
+    ) -> None:
+        """Add chunks with their embeddings and metadata to the store."""
+        pass
+
     @abstractmethod
     def search_similar(self, query_embedding: List[float], top_k: int) -> List[SearchResult]:
-        """Search for similar embeddings."""
+        """Search for similar embeddings and return ordered results."""
         pass
-    
+
     @abstractmethod
-    def save_index(self, file_path: str) -> None:
-        """Save the index to disk."""
+    def save_index(self, file_path: Optional[str] = None) -> None:
+        """Persist the index to durable storage (no-op for backends that auto-persist)."""
         pass
-    
+
     @abstractmethod
-    def load_index(self, file_path: str) -> None:
-        """Load the index from disk."""
+    def load_index(self, file_path: Optional[str] = None) -> None:
+        """Load the index from durable storage (no-op for backends that auto-persist)."""
         pass
-    
+
     @abstractmethod
     def get_document_count(self) -> int:
-        """Get the number of documents in the store."""
+        """Get the number of unique documents in the store."""
+        pass
+
+    @abstractmethod
+    def get_chunk_count(self) -> int:
+        """Get the total number of chunks / vectors in the store."""
+        pass
+
+    @abstractmethod
+    def clear(self) -> None:
+        """Remove all data from the store."""
+        pass
+
+    @abstractmethod
+    def get_all_document_names(self) -> List[str]:
+        """Return a sorted list of all unique document names."""
+        pass
+
+    @abstractmethod
+    def delete_document_by_name(self, document_name: str) -> int:
+        """Delete all chunks for a document and return the number deleted."""
+        pass
+
+    @abstractmethod
+    def document_exists(self, document_name: str) -> bool:
+        """Return True if at least one chunk for the document exists."""
+        pass
+
+    @abstractmethod
+    def get_document_info(self, document_name: str) -> Optional[Dict[str, Any]]:
+        """Return a dict with document stats, or None if the document is not found."""
         pass
 
 

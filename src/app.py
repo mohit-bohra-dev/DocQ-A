@@ -16,7 +16,9 @@ from .models import QueryResult, SourceReference
 from .query_engine import QueryEngine
 from .answer_generator import AnswerGenerator
 from .embeddings import EmbeddingService
+from .interfaces import VectorStore
 from .vector_store import FAISSVectorStore
+from .qdrant_vector_store import QdrantVectorStore
 from .ingestion import DocumentIngestionService
 
 # Configure logging
@@ -204,19 +206,34 @@ def get_embedding_service() -> EmbeddingService:
     return _embedding_service
 
 
-def get_vector_store() -> FAISSVectorStore:
-    """Get the vector store singleton."""
+def get_vector_store() -> VectorStore:
+    """Get the vector store singleton (FAISS or Qdrant based on config)."""
     global _vector_store
     if _vector_store is None:
-        embedding_service = get_embedding_service()
-        dimension = embedding_service.get_embedding_dimension()
-        _vector_store = FAISSVectorStore(
-            dimension=dimension,
-            index_path=config.vector_store_path,
-            metadata_path=config.metadata_path
-        )
-        # Load existing index if available
-        _vector_store.load_index()
+        backend = config.vector_store_backend
+        if backend == "qdrant":
+            logger.info("Initialising Qdrant vector store", extra={"collection": config.qdrant_collection_name})
+            embedding_service = get_embedding_service()
+            dimension = embedding_service.get_embedding_dimension()
+            _vector_store = QdrantVectorStore(
+                dimension=dimension,
+                collection_name=config.qdrant_collection_name,
+                host=config.qdrant_host,
+                port=config.qdrant_port,
+                url=config.qdrant_url,
+                api_key=config.qdrant_api_key,
+            )
+        else:
+            logger.info("Initialising FAISS vector store")
+            embedding_service = get_embedding_service()
+            dimension = embedding_service.get_embedding_dimension()
+            _vector_store = FAISSVectorStore(
+                dimension=dimension,
+                index_path=config.vector_store_path,
+                metadata_path=config.metadata_path,
+            )
+            # Load existing index if available
+            _vector_store.load_index()
     return _vector_store
 
 
@@ -322,9 +339,11 @@ async def health_check() -> HealthResponse:
         try:
             vector_store = get_vector_store()
             components["vector_store"] = "ready"
+            components["vector_store_backend"] = config.vector_store_backend
             components["documents_indexed"] = vector_store.get_document_count()
         except Exception as e:
             components["vector_store"] = f"error: {str(e)}"
+            components["vector_store_backend"] = config.vector_store_backend
             components["documents_indexed"] = 0
         
         try:

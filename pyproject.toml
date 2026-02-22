@@ -27,6 +27,7 @@ dependencies = [
     "reportlab>=4.4.7",
     "streamlit>=1.28.0",
     "requests>=2.31.0",
+    "qdrant-client>=1.7.0",
     "debugpy>=1.8.20",
     "matplotlib>=3.7.0",
     "seaborn>=0.12.0",

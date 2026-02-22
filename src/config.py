@@ -21,8 +21,16 @@ class RAGConfig:
     top_k_results: int = 5
     
     # Vector store settings
+    vector_store_backend: str = "faiss"  # "faiss" or "qdrant"
     vector_store_path: str = "data/vector_store"
     metadata_path: str = "data/metadata.json"
+
+    # Qdrant settings (used when vector_store_backend = "qdrant")
+    qdrant_host: str = "localhost"
+    qdrant_port: int = 6333
+    qdrant_url: Optional[str] = None        # Qdrant Cloud URL (overrides host/port)
+    qdrant_api_key: Optional[str] = None    # Qdrant Cloud API key
+    qdrant_collection_name: str = "documents"
     
     # Embedding settings
     embedding_provider: str = "sentence-transformers"  # "sentence-transformers" or "gemini"
@@ -55,8 +63,15 @@ class RAGConfig:
         self.chunk_overlap = int(os.getenv("CHUNK_OVERLAP", self.chunk_overlap))
         self.top_k_results = int(os.getenv("TOP_K_RESULTS", self.top_k_results))
         
+        self.vector_store_backend = os.getenv("VECTOR_STORE_BACKEND", self.vector_store_backend)
         self.vector_store_path = os.getenv("VECTOR_STORE_PATH", self.vector_store_path)
         self.metadata_path = os.getenv("METADATA_PATH", self.metadata_path)
+
+        self.qdrant_host = os.getenv("QDRANT_HOST", self.qdrant_host)
+        self.qdrant_port = int(os.getenv("QDRANT_PORT", self.qdrant_port))
+        self.qdrant_url = os.getenv("QDRANT_URL", self.qdrant_url)
+        self.qdrant_api_key = os.getenv("QDRANT_API_KEY", self.qdrant_api_key)
+        self.qdrant_collection_name = os.getenv("QDRANT_COLLECTION_NAME", self.qdrant_collection_name)
         
         self.embedding_provider = os.getenv("EMBEDDING_PROVIDER", self.embedding_provider)
         self.embedding_model = os.getenv("EMBEDDING_MODEL", self.embedding_model)
@@ -98,13 +113,19 @@ class RAGConfig:
         
         if self.embedding_provider == "gemini" and not self.gemini_api_key:
             raise ValueError("gemini_api_key is required when using Gemini embedding provider")
-        
+
         if self.llm_provider == "gemini" and not self.gemini_api_key:
             raise ValueError("gemini_api_key is required when using Gemini provider")
-        
+
         if self.llm_provider == "openai" and not self.openai_api_key:
             raise ValueError("openai_api_key is required when using OpenAI provider")
-        
+
+        if self.vector_store_backend not in ("faiss", "qdrant"):
+            raise ValueError(f"vector_store_backend must be 'faiss' or 'qdrant', got '{self.vector_store_backend}'")
+
+        if self.vector_store_backend == "qdrant" and self.qdrant_url and not self.qdrant_api_key:
+            raise ValueError("qdrant_api_key is required when connecting to Qdrant Cloud (qdrant_url set)")
+
         if self.max_file_size_mb <= 0:
             raise ValueError("max_file_size_mb must be positive")
 
