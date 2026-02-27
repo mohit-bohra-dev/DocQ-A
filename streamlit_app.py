@@ -6,6 +6,10 @@ from typing import List, Dict, Optional
 from datetime import datetime
 from dataclasses import dataclass
 
+# Load .env BEFORE importing ui_utils — os.getenv("API_BASE_URL") runs at import time
+from dotenv import load_dotenv
+load_dotenv()
+
 # Import our utility functions
 from src.ui_utils import APIClient, HealthChecker, format_file_size, format_timestamp, clean_document_name, validate_pdf_file
 from src.models import ProcessingStatus
