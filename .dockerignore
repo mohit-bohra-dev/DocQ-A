@@ -1,0 +1,34 @@
+# Skip the virtual environment
+.venv/
+venv/
+env/
+
+# Skip git history
+.git/
+.gitignore
+
+# Skip cache directories
+**/__pycache__/
+**/.pytest_cache/
+**/.ipynb_checkpoints/
+.kiro/
+.idea/
+
+# Skip local data and builds
+data/
+build/
+dist/
+*.egg-info/
+
+# Skip documentation and markdown
+*.md
+demo/
+screenshots/
+
+# Skip environment secrets
+.env
+.env.*
+!.env.example
+
+# Skip log files
+*.log

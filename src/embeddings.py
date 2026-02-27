@@ -3,8 +3,6 @@
 import logging
 from typing import List, Dict, Any
 
-
-from sentence_transformers import SentenceTransformer
 from google import genai
 
 try:
@@ -16,6 +14,14 @@ except ImportError:
     from config import RAGConfig
 
 logger = logging.getLogger(__name__)
+
+# Optional heavy dependency — only needed for sentence-transformers backend
+try:
+    from sentence_transformers import SentenceTransformer as _SentenceTransformer
+    _SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    _SentenceTransformer = None
+    _SENTENCE_TRANSFORMERS_AVAILABLE = False
 
 
 class SentenceTransformerProvider(EmbeddingProvider):
@@ -32,11 +38,16 @@ class SentenceTransformerProvider(EmbeddingProvider):
         self._dimension = None
         logger.info(f"Initializing SentenceTransformer provider with model: {model_name}")
     
-    def _load_model(self) -> SentenceTransformer:
+    def _load_model(self):
         """Lazy load the model to avoid loading during initialization."""
+        if not _SENTENCE_TRANSFORMERS_AVAILABLE:
+            raise ImportError(
+                "sentence-transformers is not installed. "
+                "Install it with: pip install -e \".[local]\""
+            )
         if self._model is None:
             try:
-                self._model = SentenceTransformer(self.model_name)
+                self._model = _SentenceTransformer(self.model_name)
                 logger.info(f"Successfully loaded SentenceTransformer model: {self.model_name}")
             except Exception as e:
                 logger.error(f"Failed to load SentenceTransformer model {self.model_name}: {e}")

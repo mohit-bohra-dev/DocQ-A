@@ -1,15 +1,20 @@
 """Utility functions for the Streamlit UI."""
 
+import os
 import requests
 import time
 from typing import Dict, Optional
 from datetime import datetime
 
+# Allow the backend URL to be configured via environment variable.
+# Set API_BASE_URL=https://your-cloudrun-service-url when deploying.
+_DEFAULT_API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+
 
 class APIClient:
     """Client for interacting with the FastAPI backend."""
     
-    def __init__(self, base_url: str = "http://localhost:8000"):
+    def __init__(self, base_url: str = _DEFAULT_API_BASE_URL):
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
         self.session.headers.update({
@@ -231,7 +236,7 @@ class HealthChecker:
         self.cache_duration = cache_duration
         self.last_check_time: Optional[float] = None
         self.last_result: Optional[Dict] = None
-        self.api_client = APIClient()
+        self.api_client = APIClient(base_url=_DEFAULT_API_BASE_URL)
     
     def get_health_status(self, force_refresh: bool = False) -> Dict:
         """Get health status with caching."""

@@ -1,0 +1,80 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Google Cloud Build config — builds & deploys the FastAPI backend to Cloud Run
+#
+# Prerequisites:
+#   gcloud auth login
+#   gcloud config set project YOUR_PROJECT_ID
+#
+# One-off deploy (no CI/CD):
+#   gcloud builds submit --config cloudbuild.yaml .
+#
+# Set up secrets in Cloud Run console:
+#   GEMINI_API_KEY, QDRANT_URL, QDRANT_API_KEY
+# ─────────────────────────────────────────────────────────────────────────────
+
+substitutions:
+  _REGION: us-central1         # change to your preferred region
+  _SERVICE: docqa-backend
+  _IMAGE: gcr.io/$PROJECT_ID/$_SERVICE
+
+steps:
+  # 1. Build the Docker image
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - build
+      - --tag
+      - $_IMAGE:$SHORT_SHA
+      - --tag
+      - $_IMAGE:latest
+      - .
+
+  # 2. Push to Google Container Registry
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - push
+      - --all-tags
+      - $_IMAGE
+
+  # 3. Deploy to Cloud Run
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - $_SERVICE
+      - --image
+      - $_IMAGE:$SHORT_SHA
+      - --region
+      - $_REGION
+      - --platform
+      - managed
+      - --allow-unauthenticated   # public demo — remove for private deployments
+      - --port
+      - "8080"
+      - --memory
+      - "2Gi"
+      - --cpu
+      - "2"
+      - --min-instances
+      - "0"                       # scale to zero when idle (saves cost)
+      - --max-instances
+      - "3"
+      - --set-env-vars
+      - >-
+        VECTOR_STORE_BACKEND=qdrant,
+        EMBEDDING_PROVIDER=gemini,
+        LLM_PROVIDER=gemini,
+        LOG_FORMAT=json,
+        LOG_LEVEL=INFO
+      # Secrets are managed via Cloud Run Secret Manager — add them in the
+      # console under "Edit & Deploy New Revision > Variables & Secrets":
+      #   GEMINI_API_KEY  → from Secret Manager
+      #   QDRANT_URL      → from Secret Manager
+      #   QDRANT_API_KEY  → from Secret Manager
+
+images:
+  - $_IMAGE:$SHORT_SHA
+  - $_IMAGE:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY

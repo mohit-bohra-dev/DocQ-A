@@ -10,38 +10,45 @@ authors = [
     {name = "Developer", email = "dev@example.com"},
 ]
 dependencies = [
+    # ── Core (required everywhere, including Docker) ──
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
     "python-multipart>=0.0.6",
     "pydantic>=2.5.0",
     "pypdf>=6.5.0",
-    "faiss-cpu>=1.7.4",
-    "sentence-transformers>=2.2.2",
     "google-genai>=0.2.0",
     "python-dotenv>=1.0.0",
     "structlog>=23.2.0",
-    "hypothesis>=6.88.0",
-    "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
-    "httpx>=0.25.0",
-    "reportlab>=4.4.7",
+    "qdrant-client>=1.7.0",
     "streamlit>=1.28.0",
     "requests>=2.31.0",
-    "qdrant-client>=1.7.0",
-    "debugpy>=1.8.20",
-    "matplotlib>=3.7.0",
-    "seaborn>=0.12.0",
-    "umap-learn>=0.5.3",
 ]
 requires-python = ">=3.9"
 
 [project.optional-dependencies]
+# Local dev mode: FAISS vector store + sentence-transformers embeddings
+# Install with: pip install -e ".[local]"
+local = [
+    "faiss-cpu>=1.7.4",
+    "sentence-transformers>=2.2.2",
+]
+
+# Visualization tools
+viz = [
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "umap-learn>=0.5.3",
+]
+
+# Development & testing
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
     "hypothesis>=6.88.0",
     "httpx>=0.25.0",
+    "reportlab>=4.4.7",
+    "debugpy>=1.8.20",
     "black>=23.0.0",
     "isort>=5.12.0",
     "mypy>=1.7.0",

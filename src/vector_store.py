@@ -4,9 +4,19 @@ import json
 import os
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-import numpy as np
-import faiss
-from faiss import IndexFlatIP
+
+# Optional heavy dependencies — only needed for the FAISS local backend.
+# The cloud stack (Qdrant + Gemini) does not require these.
+try:
+    import numpy as np
+    import faiss
+    from faiss import IndexFlatIP
+    _FAISS_AVAILABLE = True
+except ImportError:
+    np = None
+    faiss = None
+    IndexFlatIP = None
+    _FAISS_AVAILABLE = False
 
 try:
     from .interfaces import VectorStore
@@ -18,7 +28,7 @@ except ImportError:
 
 class FAISSVectorStore(VectorStore):
     """FAISS-based implementation of the VectorStore interface."""
-    index: IndexFlatIP | IndexFlatIP
+    index: Any  # faiss.IndexFlatIP when faiss is installed; guarded by _FAISS_AVAILABLE
 
     def __init__(self, dimension: int, index_path: str = "data/faiss_index", 
                  metadata_path: str = "data/metadata.json"):
@@ -30,6 +40,11 @@ class FAISSVectorStore(VectorStore):
             index_path: Path to save/load the FAISS index
             metadata_path: Path to save/load the metadata JSON file
         """
+        if not _FAISS_AVAILABLE:
+            raise ImportError(
+                "faiss-cpu is not installed. "
+                "Install it with: pip install -e \".[local]\""
+            )
         self.dimension = dimension
         self.index_path = index_path
         self.metadata_path = metadata_path
