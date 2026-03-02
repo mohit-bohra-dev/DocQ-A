@@ -91,7 +91,8 @@ class QdrantVectorStore(VectorStore):
     # ------------------------------------------------------------------
 
     def _ensure_collection(self) -> None:
-        """Create the collection if it does not already exist."""
+        """Create the collection if it does not already exist, and ensure
+        the payload index on document_name is present (idempotent)."""
         try:
             existing = [c.name for c in self.client.get_collections().collections]
             if self.collection_name not in existing:
@@ -109,10 +110,39 @@ class QdrantVectorStore(VectorStore):
                 )
             else:
                 logger.debug("Qdrant collection '%s' already exists.", self.collection_name)
+
+            # Always ensure the payload index exists — Qdrant Cloud requires
+            # indexed fields for filtered queries (count, scroll, delete).
+            # This call is idempotent: it is a no-op if the index already exists.
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name=_FIELD_DOCUMENT_NAME,
+                    field_schema=qmodels.PayloadSchemaType.KEYWORD,
+                )
+                logger.debug(
+                    "Payload index on '%s' ensured for collection '%s'.",
+                    _FIELD_DOCUMENT_NAME,
+                    self.collection_name,
+                )
+            except Exception as idx_exc:
+                # Non-fatal: log and continue — worst case filtered queries are slower
+                logger.warning("Could not ensure payload index: %s", idx_exc)
+
         except Exception as exc:
             raise RuntimeError(
                 f"Failed to ensure Qdrant collection '{self.collection_name}': {exc}"
             ) from exc
+
+
+    def _collection_exists(self) -> bool:
+        """Return True if the collection exists in Qdrant."""
+        try:
+            existing = [c.name for c in self.client.get_collections().collections]
+            return self.collection_name in existing
+        except Exception:
+            return False
+
 
     @staticmethod
     def _point_id(chunk_id: str) -> str:
@@ -317,6 +347,8 @@ class QdrantVectorStore(VectorStore):
 
     def delete_document_by_name(self, document_name: str) -> int:
         """Delete all chunks belonging to a document and return the count deleted."""
+        if not self._collection_exists():
+            return 0
         # Count before deletion
         try:
             before = self.client.count(
@@ -358,6 +390,8 @@ class QdrantVectorStore(VectorStore):
 
     def document_exists(self, document_name: str) -> bool:
         """Return True if at least one chunk for the document is stored."""
+        if not self._collection_exists():
+            return False
         try:
             result = self.client.count(
                 collection_name=self.collection_name,
