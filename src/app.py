@@ -2,11 +2,12 @@
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ValidationError
 from typing import List, Optional, Dict, Any
 import os
+import shutil
 import tempfile
 import uuid
 
@@ -452,6 +453,11 @@ async def upload_document(
             temp_file.write(content)
             temp_file_path = temp_file.name
         
+        # Persist a copy of the original PDF so it can be served later
+        os.makedirs(config.uploads_dir, exist_ok=True)
+        upload_dest = os.path.join(config.uploads_dir, document_name)
+        shutil.copy2(temp_file_path, upload_dest)
+        
         # Use simple document name without UUID
         document_id = document_name  # Use filename as ID for clarity
         
@@ -513,6 +519,26 @@ async def upload_document(
             raise HTTPException(status_code=507, detail="Insufficient storage space")
         else:
             raise HTTPException(status_code=500, detail=f"Document processing failed: {str(e)}")
+
+@app.get("/documents/{document_name}/file",
+         summary="Download Document",
+         description="Serve the original PDF file for a given document")
+async def get_document_file(document_name: str):
+    """Return the original PDF file for browser viewing."""
+    file_path = os.path.join(config.uploads_dir, document_name)
+    if not os.path.isfile(file_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Original file for '{document_name}' is not available. "
+                   "Only documents uploaded after this feature was enabled can be viewed."
+        )
+    return FileResponse(
+        path=file_path,
+        media_type="application/pdf",
+        filename=document_name,
+        headers={"Content-Disposition": "inline"},
+    )
+
 
 
 @app.post("/query", 
@@ -621,6 +647,7 @@ async def startup_event():
     # Create data directories
     os.makedirs(os.path.dirname(config.vector_store_path), exist_ok=True)
     os.makedirs(os.path.dirname(config.metadata_path), exist_ok=True)
+    os.makedirs(config.uploads_dir, exist_ok=True)
     
     logger.info("Application startup completed")
 

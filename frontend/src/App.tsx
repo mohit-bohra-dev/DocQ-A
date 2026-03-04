@@ -5,19 +5,36 @@ import { Sidebar } from './components/layout/Sidebar';
 import { UploadZone } from './components/upload/UploadZone';
 import { QuestionForm } from './components/qa/QuestionForm';
 import { AnswerCard } from './components/qa/AnswerCard';
+import type { ViewSourcePayload } from './components/qa/AnswerCard';
 import { ConversationHistory } from './components/history/ConversationHistory';
+import { PDFViewer } from './components/pdf/PDFViewer';
 import { ToastContainer } from './components/ui/Toast';
-import { Upload, MessageSquare, History } from 'lucide-react';
+import { Upload, MessageSquare, History, FileSearch } from 'lucide-react';
 import type { QueryResponse } from './types';
 
 const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: 1 } },
 });
 
-type Tab = 'upload' | 'ask' | 'history';
+type Tab = 'upload' | 'ask' | 'history' | 'view';
 
-function MainContent() {
-    const [activeTab, setActiveTab] = useState<Tab>('upload');
+interface MainContentProps {
+    selectedDoc: string | null;
+    jumpToPage: number | undefined;
+    highlightText: string | undefined;
+    activeTab: Tab;
+    setActiveTab: (tab: Tab) => void;
+    onViewSource: (payload: ViewSourcePayload) => void;
+}
+
+function MainContent({
+    selectedDoc,
+    jumpToPage,
+    highlightText,
+    activeTab,
+    setActiveTab,
+    onViewSource,
+}: MainContentProps) {
     const [latestAnswer, setLatestAnswer] = useState<{ response: QueryResponse; question: string } | null>(null);
     const { conversationHistory, addConversationEntry } = useAppContext();
 
@@ -36,7 +53,12 @@ function MainContent() {
     const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
         { id: 'upload', label: 'Upload', icon: <Upload className="w-4 h-4" /> },
         { id: 'ask', label: 'Ask', icon: <MessageSquare className="w-4 h-4" /> },
-        { id: 'history', label: `History${conversationHistory.length ? ` (${conversationHistory.length})` : ''}`, icon: <History className="w-4 h-4" /> },
+        {
+            id: 'history',
+            label: `History${conversationHistory.length ? ` (${conversationHistory.length})` : ''}`,
+            icon: <History className="w-4 h-4" />,
+        },
+        { id: 'view', label: selectedDoc ? 'View PDF' : 'View', icon: <FileSearch className="w-4 h-4" /> },
     ];
 
     return (
@@ -47,11 +69,17 @@ function MainContent() {
                     {activeTab === 'upload' && 'Upload Documents'}
                     {activeTab === 'ask' && 'Ask a Question'}
                     {activeTab === 'history' && 'Conversation History'}
+                    {activeTab === 'view' && (selectedDoc ?? 'PDF Viewer')}
                 </h2>
                 <p className="text-sm text-slate-500 mt-1">
                     {activeTab === 'upload' && 'Add PDF files to build your knowledge base.'}
                     {activeTab === 'ask' && 'Query your documents with natural language.'}
                     {activeTab === 'history' && 'Review past questions and answers.'}
+                    {activeTab === 'view' && (
+                        jumpToPage
+                            ? `Showing page ${jumpToPage}${highlightText ? ` · highlighting "${highlightText}"` : ''}`
+                            : 'Browse the original PDF document.'
+                    )}
                 </p>
             </div>
 
@@ -63,8 +91,8 @@ function MainContent() {
                             key={t.id}
                             onClick={() => setActiveTab(t.id)}
                             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === t.id
-                                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/25'
-                                    : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.04]'
+                                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/25'
+                                : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.04]'
                                 }`}
                         >
                             {t.icon}
@@ -75,7 +103,7 @@ function MainContent() {
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto px-8 py-4">
+            <div className={`flex-1 overflow-y-auto px-8 py-4 ${activeTab === 'view' ? 'flex flex-col' : ''}`}>
                 {activeTab === 'upload' && (
                     <div className="max-w-2xl">
                         <UploadZone />
@@ -88,7 +116,11 @@ function MainContent() {
                             <QuestionForm onAnswer={handleAnswer} />
                         </div>
                         {latestAnswer && (
-                            <AnswerCard response={latestAnswer.response} question={latestAnswer.question} />
+                            <AnswerCard
+                                response={latestAnswer.response}
+                                question={latestAnswer.question}
+                                onViewSource={onViewSource}
+                            />
                         )}
                     </div>
                 )}
@@ -98,12 +130,41 @@ function MainContent() {
                         <ConversationHistory entries={conversationHistory} />
                     </div>
                 )}
+
+                {activeTab === 'view' && (
+                    <div className="flex-1 flex flex-col">
+                        <PDFViewer
+                            docName={selectedDoc}
+                            jumpToPage={jumpToPage}
+                            highlightText={highlightText}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );
 }
 
 function AppLayout() {
+    const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<Tab>('upload');
+    const [jumpToPage, setJumpToPage] = useState<number | undefined>(undefined);
+    const [highlightText, setHighlightText] = useState<string | undefined>(undefined);
+
+    function handleViewDocument(docName: string) {
+        setSelectedDoc(docName);
+        setJumpToPage(undefined);
+        setHighlightText(undefined);
+        setActiveTab('view');
+    }
+
+    function handleViewSource({ docName, page, highlightText }: ViewSourcePayload) {
+        setSelectedDoc(docName);
+        setJumpToPage(page);
+        setHighlightText(highlightText);
+        setActiveTab('view');
+    }
+
     return (
         <div
             className="flex h-screen overflow-hidden"
@@ -119,11 +180,18 @@ function AppLayout() {
             />
             {/* Sidebar */}
             <div className="relative z-10 p-4 border-r border-white/5 overflow-y-auto">
-                <Sidebar />
+                <Sidebar onViewDocument={handleViewDocument} />
             </div>
             {/* Main */}
             <main className="relative z-10 flex-1 flex flex-col overflow-hidden">
-                <MainContent />
+                <MainContent
+                    selectedDoc={selectedDoc}
+                    jumpToPage={jumpToPage}
+                    highlightText={highlightText}
+                    activeTab={activeTab}
+                    setActiveTab={setActiveTab}
+                    onViewSource={handleViewSource}
+                />
             </main>
         </div>
     );

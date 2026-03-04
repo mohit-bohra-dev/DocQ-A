@@ -41,6 +41,7 @@ class SourceReference:
     document_name: str
     page_number: int
     chunk_id: str
+    content_snippet: str = ""  # Excerpt of the chunk text for frontend highlighting
 
 
 @dataclass

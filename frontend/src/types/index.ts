@@ -11,6 +11,8 @@ export interface SourceReference {
     page_number: number | string;
     chunk_id?: string;
     relevance_score?: number;
+    /** Excerpt of the chunk text, returned by the backend for PDF highlighting. */
+    content_snippet?: string;
 }
 
 export interface QueryResponse {

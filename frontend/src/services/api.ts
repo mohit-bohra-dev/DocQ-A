@@ -97,6 +97,10 @@ class ApiClient {
         }
     }
 
+    getDocumentFileUrl(documentName: string): string {
+        return `${BASE_URL}/documents/${encodeURIComponent(documentName)}/file`;
+    }
+
     private extractError(err: unknown): string {
         if (axios.isAxiosError(err)) {
             if (err.code === 'ECONNABORTED') return 'Request timed out. Please try again.';

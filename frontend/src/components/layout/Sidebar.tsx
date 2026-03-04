@@ -13,6 +13,7 @@ import {
     Cpu,
     Database,
     Brain,
+    Eye,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -35,7 +36,7 @@ function cleanDocName(name: string): string {
     return name;
 }
 
-export function Sidebar() {
+export function Sidebar({ onViewDocument }: { onViewDocument?: (name: string) => void }) {
     const { data: health, isLoading: healthLoading, refetch: refetchHealth } = useHealth();
     const { data: documents, isLoading: docsLoading, refetch: refetchDocs } = useDocuments();
     const deleteMut = useDeleteDocument();
@@ -182,6 +183,15 @@ export function Sidebar() {
                                 >
                                     <Trash2 className="w-3.5 h-3.5" />
                                 </button>
+                                {onViewDocument && (
+                                    <button
+                                        onClick={() => onViewDocument(doc.document_name)}
+                                        className="btn-ghost p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:!border-indigo-500/40 hover:!text-indigo-400"
+                                        title="View PDF"
+                                    >
+                                        <Eye className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
                             </li>
                         ))}
                     </ul>

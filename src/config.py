@@ -24,6 +24,7 @@ class RAGConfig:
     vector_store_backend: str = "faiss"  # "faiss" or "qdrant"
     vector_store_path: str = "data/vector_store"
     metadata_path: str = "data/metadata.json"
+    uploads_dir: str = "data/uploads"
 
     # Qdrant settings (used when vector_store_backend = "qdrant")
     qdrant_host: str = "localhost"
@@ -66,6 +67,7 @@ class RAGConfig:
         self.vector_store_backend = os.getenv("VECTOR_STORE_BACKEND", self.vector_store_backend)
         self.vector_store_path = os.getenv("VECTOR_STORE_PATH", self.vector_store_path)
         self.metadata_path = os.getenv("METADATA_PATH", self.metadata_path)
+        self.uploads_dir = os.getenv("UPLOADS_DIR", self.uploads_dir)
 
         self.qdrant_host = os.getenv("QDRANT_HOST", self.qdrant_host)
         self.qdrant_port = int(os.getenv("QDRANT_PORT", self.qdrant_port))

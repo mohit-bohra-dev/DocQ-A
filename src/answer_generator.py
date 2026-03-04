@@ -267,8 +267,10 @@ ANSWER:"""
             context: List of text chunks used in answer generation
             
         Returns:
-            List of source references
+            List of source references with content snippets for highlighting
         """
+        SNIPPET_LEN = 300  # characters — long enough to be unique, short enough for regex
+        
         references = []
         seen_sources = set()
         
@@ -277,15 +279,27 @@ ANSWER:"""
             source_key = (chunk.document_name, chunk.page_number, chunk.chunk_id)
             
             if source_key not in seen_sources:
+                # Build a clean snippet: first SNIPPET_LEN chars, clipped at last whitespace
+                raw = chunk.text.strip()
+                if len(raw) > SNIPPET_LEN:
+                    clipped = raw[:SNIPPET_LEN]
+                    # Step back to the last word boundary
+                    last_space = clipped.rfind(" ")
+                    clipped = clipped[:last_space] if last_space > 0 else clipped
+                else:
+                    clipped = raw
+
                 references.append(SourceReference(
                     document_name=chunk.document_name,
                     page_number=chunk.page_number,
-                    chunk_id=chunk.chunk_id
+                    chunk_id=chunk.chunk_id,
+                    content_snippet=clipped
                 ))
                 seen_sources.add(source_key)
         
         logger.debug(f"Generated {len(references)} unique source references")
         return references
+
     
     def _calculate_confidence_score(self, context: List[TextChunk]) -> float:
         """
