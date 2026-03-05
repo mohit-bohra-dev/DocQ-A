@@ -140,6 +140,9 @@ class SentenceTransformerProvider(EmbeddingProvider):
         return self._dimension
 
 
+_GEMINI_BATCH_SIZE = 250  # Gemini embed_content limit per request
+
+
 class GeminiEmbeddingProvider(EmbeddingProvider):
     """Google Gemini embedding provider."""
     
@@ -192,7 +195,7 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
             raise
     
     def generate_batch_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """Generate embeddings for multiple texts.
+        """Generate embeddings for multiple texts in a single API call.
         
         Args:
             texts: List of input texts to embed
@@ -204,13 +207,63 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
             logger.warning("Empty text list provided for batch embedding generation")
             return []
         
-        # Process texts individually for now (check if batch support is available)
-        embeddings = []
-        for text in texts:
-            embedding = self.generate_embedding(text)
-            embeddings.append(embedding)
+        # Filter out empty texts, track original indices to reconstruct result
+        non_empty_texts = []
+        text_indices = []
+        for i, text in enumerate(texts):
+            if text.strip():
+                non_empty_texts.append(text)
+                text_indices.append(i)
         
-        return embeddings
+        if not non_empty_texts:
+            logger.warning("All texts are empty, returning zero embeddings")
+            dimension = self.get_embedding_dimension()
+            return [[0.0] * dimension for _ in texts]
+        
+        try:
+            client = self._get_client()
+            
+            # Split into sub-batches to respect Gemini's per-request limit
+            all_embeddings: List[List[float]] = []
+            num_batches = (len(non_empty_texts) + _GEMINI_BATCH_SIZE - 1) // _GEMINI_BATCH_SIZE
+            
+            for batch_idx in range(num_batches):
+                start = batch_idx * _GEMINI_BATCH_SIZE
+                end = start + _GEMINI_BATCH_SIZE
+                batch = non_empty_texts[start:end]
+                
+                logger.debug(
+                    f"Embedding sub-batch {batch_idx + 1}/{num_batches} "
+                    f"({len(batch)} texts)"
+                )
+                response = client.models.embed_content(
+                    model=self.model_name,
+                    contents=batch
+                )
+                
+                if not response.embeddings or len(response.embeddings) != len(batch):
+                    raise ValueError(
+                        f"Sub-batch {batch_idx + 1}: expected {len(batch)} embeddings, "
+                        f"got {len(response.embeddings) if response.embeddings else 0}"
+                    )
+                
+                all_embeddings.extend(list(e.values) for e in response.embeddings)
+            
+            # Reconstruct full list, inserting zero vectors for empty texts
+            dimension = len(all_embeddings[0])
+            result = [[0.0] * dimension] * len(texts)
+            for idx, embedding in zip(text_indices, all_embeddings):
+                result[idx] = embedding
+            
+            logger.info(
+                f"Generated {len(non_empty_texts)} embeddings "
+                f"across {num_batches} API call(s)"
+            )
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to generate batch embeddings: {e}")
+            raise
     
     def get_embedding_dimension(self) -> int:
         """Get the dimension of embeddings produced by this provider.
