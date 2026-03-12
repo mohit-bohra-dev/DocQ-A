@@ -65,45 +65,63 @@ export function PDFViewer({ docName, jumpToPage, highlightText }: PDFViewerProps
         );
     }, []);
 
-    /** Pre-process the snippet once: normalise whitespace, lowercase. */
-    const normalSnippet = useMemo(() => {
+    /**
+     * Pre-compute a Set of "distinctive" words from the snippet.
+     * Only words with ≥ 6 characters are kept — this naturally filters out
+     * common stop-words (the, with, from, that, this, also, been, …) that
+     * caused rampant false-positive highlighting with the old approach.
+     */
+    const snippetWordSet = useMemo(() => {
         if (!highlightText) return null;
-        return highlightText.replace(/\s+/g, ' ').trim().toLowerCase();
+        const tokens = highlightText
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase()
+            .split(/[^a-z0-9]+/)
+            .filter(w => w.length >= 6);
+        return tokens.length > 0 ? new Set(tokens) : null;
     }, [highlightText]);
 
     /**
-     * Highlight strategy — tries BOTH approaches so neither is lost:
+     * Highlight strategy — two complementary approaches:
      *
-     * Approach A (token-in-snippet / containment):
-     *   PDF text-layer tokens are usually 1-5 words. If the token appears as
-     *   a substring of the backend chunk excerpt it almost certainly belongs to
-     *   the cited passage → highlight it.
+     * Approach A (distinctive-word-set matching):
+     *   Extract distinctive words (≥ 6 chars) from the snippet into a Set.
+     *   A PDF span is highlighted only when a majority (≥ 60 %) of its own
+     *   distinctive words appear in the Set.  This avoids the old problem
+     *   where every 4-char common word on the page lit up.
      *
-     * Approach B (snippet-in-token / direct-regex):
-     *   pdfjs sometimes groups several words into a single span. If the entire
-     *   highlightText (or a long portion of it) appears inside the token string,
-     *   we can do a regex replace to highlight just the matching part.
+     * Approach B (contiguous phrase regex):
+     *   pdfjs sometimes groups many words into a single span.  If a leading
+     *   segment (first 120 chars) of the snippet appears inside the span
+     *   text, highlight just that matching portion.
      *
-     * Tokens shorter than 4 chars are skipped to avoid stop-word noise.
-     * The return value is used as innerHTML by react-pdf, so raw HTML is safe.
+     * Spans shorter than 4 chars are skipped entirely.
      */
     const customTextRenderer = useCallback(
         ({ str }: { str: string; itemIndex: number }): string => {
-            if (!normalSnippet || !highlightText || !str) return str;
+            // debugger;
+            if (!snippetWordSet || !highlightText || !str) return str;
             const trimmed = str.trim();
             if (trimmed.length < 4) return str;
 
-            const normStr = trimmed.replace(/\s+/g, ' ').toLowerCase();
+            // ── Approach A: distinctive-word-set matching ─────────────────
+            const spanWords = trimmed
+                .toLowerCase()
+                .split(/[^a-z0-9]+/)
+                .filter(w => w.length >= 6);
 
-            // ── Approach A: token is a substring of the snippet ──────────────
-            if (normalSnippet.includes(normStr)) {
-                return str.replace(trimmed, `<mark class="pdf-highlight">${trimmed}</mark>`);
+            if (spanWords.length > 0) {
+                const matchCount = spanWords.filter(w => snippetWordSet.has(w)).length;
+                // Require ≥ 60 % AND at least 2 matches to avoid single-word false positives
+                // (e.g. "Corruption" appears everywhere in a corruption essay)
+                if (matchCount >= 2 && matchCount >= Math.ceil(spanWords.length * 0.6)) {
+                    return str.replace(trimmed, `<mark class="pdf-highlight">${trimmed}</mark>`);
+                }
             }
 
-            // ── Approach B: snippet phrase appears inside the token ───────────
-            // Build a simple escaped regex from the first 60 chars of the snippet
-            // (enough to be distinctive, short enough to avoid excessive backtracking)
-            const head = highlightText.slice(0, 60).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // ── Approach B: contiguous phrase regex ───────────────────────
+            const head = highlightText.slice(0, 120).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const headRegex = new RegExp(`(${head})`, 'i');
             if (headRegex.test(str)) {
                 return str.replace(headRegex, `<mark class="pdf-highlight">$1</mark>`);
@@ -111,7 +129,7 @@ export function PDFViewer({ docName, jumpToPage, highlightText }: PDFViewerProps
 
             return str;
         },
-        [normalSnippet, highlightText]
+        [snippetWordSet, highlightText]
     );
 
     function prevPage() {

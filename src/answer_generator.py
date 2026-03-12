@@ -1,7 +1,8 @@
 """Answer generation with LLM provider abstraction."""
 
+import json
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from abc import ABC, abstractmethod
 
 from google import genai
@@ -58,7 +59,7 @@ class GeminiLLMProvider(LLMProvider):
                 contents=prompt,
                 config={
                     "temperature": 0.1,  # Low temperature for more consistent answers
-                    "max_output_tokens": 1000,
+                    "max_output_tokens": 1500,
                     "top_p": 0.8,
                     "top_k": 40
                 }
@@ -169,16 +170,18 @@ class AnswerGenerator:
     def generate_answer(self, question: str, context: List[TextChunk]) -> AnswerResult:
         """
         Generate an answer based on question and retrieved context.
-        
-        Args:
-            question: User's question
-            context: List of relevant text chunks
-            
-        Returns:
-            AnswerResult with generated answer and metadata
+
+        The LLM is asked to return structured JSON containing the answer and
+        exact verbatim quotes for each source it cites.  Those quotes are
+        used as ``content_snippet`` in SourceReference so the frontend can
+        highlight a short, precise passage instead of the first 300 chars of
+        the chunk.
+
+        If the LLM response cannot be parsed as JSON, the method falls back
+        to the legacy behaviour (plain text answer + 300-char snippet).
         """
         logger.info(f"Generating answer for question with {len(context)} context chunks")
-        
+
         if not context:
             logger.warning("No context provided for answer generation")
             return AnswerResult(
@@ -186,49 +189,61 @@ class AnswerGenerator:
                 confidence_score=0.0,
                 source_references=[]
             )
-        
+
         try:
-            # Construct grounded prompt
+
+            import jsonpickle
+            decoded_list = jsonpickle.encode(context)
+            # Construct grounded prompt (asks for JSON)
             prompt = self.construct_grounded_prompt(question, context)
             logger.debug(f"Constructed prompt of length: {len(prompt)}")
-            
+
             # Generate answer using LLM
             provider = self._get_provider()
-            answer = provider.generate_answer(prompt)
-            
-            # Generate source references
-            source_references = self._generate_source_references(context)
-            
-            # Calculate confidence score based on context relevance
+            raw_response = provider.generate_answer(prompt)
+
+            # Try to parse the structured JSON response
+            parsed = self._parse_structured_response(raw_response)
+
+            if parsed is not None:
+                answer_text, citation_quotes = parsed
+                source_references = self._generate_source_references(
+                    context, citation_quotes=citation_quotes
+                )
+                logger.info("Parsed structured JSON response with %d citation quotes", len(citation_quotes))
+            else:
+                # Fallback: treat the whole response as plain-text answer
+                logger.warning("Could not parse JSON from LLM response — falling back to plain text")
+                answer_text = raw_response
+                source_references = self._generate_source_references(context)
+
             confidence_score = self._calculate_confidence_score(context)
-            
+
             result = AnswerResult(
-                answer=answer,
+                answer=answer_text,
                 confidence_score=confidence_score,
                 source_references=source_references
             )
-            
+
             logger.info(f"Answer generated successfully with confidence: {confidence_score}")
             return result
-            
+
         except Exception as e:
             logger.error(f"Answer generation failed: {e}")
             raise
-    
+
+    # ------------------------------------------------------------------
+    # Prompt construction
+    # ------------------------------------------------------------------
+
     def construct_grounded_prompt(self, question: str, context: List[TextChunk]) -> str:
         """
-        Construct a grounded prompt from question and context.
-        
-        Args:
-            question: User's question
-            context: List of relevant text chunks
-            
-        Returns:
-            Formatted prompt string
+        Build a prompt that asks the LLM for a **structured JSON** response
+        containing the answer and per-source verbatim quotes.
         """
         if not context:
             raise ValueError("Context cannot be empty for prompt construction")
-        
+
         # Build context section
         context_parts = []
         for i, chunk in enumerate(context, 1):
@@ -236,67 +251,140 @@ class AnswerGenerator:
                 f"[Source {i} - {chunk.document_name}, Page {chunk.page_number}]\n"
                 f"{chunk.text}\n"
             )
-        
+
         context_text = "\n".join(context_parts)
-        
-        # Construct the grounded prompt
-        prompt = f"""You are a helpful AI assistant that answers questions based strictly on the provided context. 
+
+        prompt = f"""You are a helpful AI assistant that answers questions based strictly on the provided context.
 
 IMPORTANT INSTRUCTIONS:
-- Only use information from the provided context to answer the question
-- If the context doesn't contain enough information to answer the question, say "I don't know"
-- Do not make up or infer information that isn't explicitly stated in the context
-- Be concise and accurate in your response
-- Reference the source documents when possible
+- Only use information from the provided context to answer the question.
+- If the context doesn't contain enough information, set the answer to "I don't know".
+- Do NOT make up or infer information that isn't explicitly stated in the context.
+- Be concise and accurate.
+- Cite sources in the answer as [Source 1], [Source 2], etc.
 
 CONTEXT:
 {context_text}
 
 QUESTION: {question}
 
-ANSWER:"""
-        
+Respond with a JSON object in EXACTLY this format (no extra keys, no markdown fences):
+{{{{
+  "answer": "Your concise answer in markdown. Cite sources as [Source 1], [Source 2] etc.",
+  "citations": [
+    {{{{
+      "source": 1,
+      "quote": "The EXACT verbatim sentence(s) from Source 1 that support your answer. Copy word-for-word, 1-2 sentences max."
+    }}}}
+  ]
+}}}}
+
+Rules for the citations array:
+- Include one entry for EACH source you actually referenced in your answer.
+- The "quote" MUST be copied word-for-word from the source text. Do NOT paraphrase.
+- Keep each quote short: 1-2 sentences (under 200 characters ideally).
+- If the answer is "I don't know", set citations to an empty array []."""
+
         logger.debug(f"Constructed grounded prompt with {len(context)} sources")
         return prompt
+
+    # ------------------------------------------------------------------
+    # Response parsing
+    # ------------------------------------------------------------------
+
+    def _parse_structured_response(
+        self, raw: str
+    ) -> Optional[tuple]:
+        """
+        Try to parse the LLM response as structured JSON.
+
+        Returns:
+            (answer_text, citation_quotes) on success, where
+            citation_quotes is a dict mapping 1-based source index → quote str.
+            None if parsing fails.
+        """
+        text = raw.strip()
+
+        # Strip optional markdown fences that LLMs sometimes add
+        if text.startswith("```"):
+            # Remove opening fence (with optional language tag)
+            first_newline = text.index("\n") if "\n" in text else 3
+            text = text[first_newline + 1:]
+        if text.endswith("```"):
+            text = text[:-3].rstrip()
+
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            logger.debug("LLM response is not valid JSON")
+            return None
+
+        if not isinstance(data, dict) or "answer" not in data:
+            logger.debug("JSON response missing 'answer' key")
+            return None
+
+        answer_text = str(data["answer"]).strip()
+        citation_quotes: Dict[int, str] = {}
+
+        for entry in data.get("citations", []):
+            if isinstance(entry, dict) and "source" in entry and "quote" in entry:
+                try:
+                    src_idx = int(entry["source"])
+                    quote = str(entry["quote"]).strip()
+                    if quote:
+                        citation_quotes[src_idx] = quote
+                except (ValueError, TypeError):
+                    continue
+
+        return answer_text, citation_quotes
     
-    def _generate_source_references(self, context: List[TextChunk]) -> List[SourceReference]:
+    def _generate_source_references(
+        self,
+        context: List[TextChunk],
+        citation_quotes: Optional[Dict[int, str]] = None,
+    ) -> List[SourceReference]:
         """
         Generate source references from context chunks.
-        
-        Args:
-            context: List of text chunks used in answer generation
-            
-        Returns:
-            List of source references with content snippets for highlighting
+
+        If *citation_quotes* is provided (from the structured JSON response),
+        the LLM's short verbatim quote is used as ``content_snippet``.
+        Otherwise falls back to the first SNIPPET_LEN characters of the chunk.
         """
-        SNIPPET_LEN = 300  # characters — long enough to be unique, short enough for regex
-        
+        SNIPPET_LEN = 300  # fallback length
+
         references = []
         seen_sources = set()
-        
-        for chunk in context:
-            # Create a unique identifier for this source
+
+        for i, chunk in enumerate(context):
             source_key = (chunk.document_name, chunk.page_number, chunk.chunk_id)
-            
+
             if source_key not in seen_sources:
-                # Build a clean snippet: first SNIPPET_LEN chars, clipped at last whitespace
-                raw = chunk.text.strip()
-                if len(raw) > SNIPPET_LEN:
-                    clipped = raw[:SNIPPET_LEN]
-                    # Step back to the last word boundary
-                    last_space = clipped.rfind(" ")
-                    clipped = clipped[:last_space] if last_space > 0 else clipped
+                # Prefer LLM-provided quote; fall back to first N chars
+                llm_quote = (
+                    citation_quotes.get(i + 1)  # 1-based source index
+                    if citation_quotes
+                    else None
+                )
+
+                if llm_quote:
+                    snippet = llm_quote
                 else:
-                    clipped = raw
+                    raw = chunk.text.strip()
+                    if len(raw) > SNIPPET_LEN:
+                        clipped = raw[:SNIPPET_LEN]
+                        last_space = clipped.rfind(" ")
+                        snippet = clipped[:last_space] if last_space > 0 else clipped
+                    else:
+                        snippet = raw
 
                 references.append(SourceReference(
                     document_name=chunk.document_name,
                     page_number=chunk.page_number,
                     chunk_id=chunk.chunk_id,
-                    content_snippet=clipped
+                    content_snippet=snippet
                 ))
                 seen_sources.add(source_key)
-        
+
         logger.debug(f"Generated {len(references)} unique source references")
         return references
 
