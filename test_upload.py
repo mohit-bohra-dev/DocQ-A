@@ -5,6 +5,34 @@ import requests
 import os
 from src.ui_utils import APIClient
 
+
+def test_ollama_cloud():
+    """Test upload with ollama cloud library."""
+    import requests
+
+    API_KEY = "cf137ff7a5294864a2e199aa37287ad1._r0F9iYGk5NcbZE8fNBCC-ua"
+
+    url = "https://ollama.com/api/generate"
+
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": "qwen3.5",
+        "prompt": "Explain Kubernetes simply",
+        "stream": False
+    }
+
+    response = requests.post(
+        url,
+        headers=headers,
+        json=payload
+    )
+
+    print(response.json())
+
 def test_health_check():
     """Test the health check endpoint."""
     print("Testing health check...")

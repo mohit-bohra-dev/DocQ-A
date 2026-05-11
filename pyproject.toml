@@ -33,6 +33,12 @@ local = [
     "sentence-transformers>=2.2.2",
 ]
 
+# OpenAI provider support
+# Install with: pip install -e ".[openai]"
+openai = [
+    "openai>=1.0.0",
+]
+
 # Visualization tools
 viz = [
     "matplotlib>=3.7.0",

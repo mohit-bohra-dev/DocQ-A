@@ -44,6 +44,7 @@ class RAGConfig:
     gemini_model: str = "gemini-1.5-flash"
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-3.5-turbo"
+    ollama_model: str = "minimax-m2.7:cloud"
     
     # API settings
     api_host: str = "0.0.0.0"
